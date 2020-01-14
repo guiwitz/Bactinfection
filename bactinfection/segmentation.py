@@ -5,7 +5,7 @@ Class implementing segmentation tools.
 # Author: Guillaume Witz, Science IT Support, Bern University, 2019
 # License: BSD3
 
-import os, glob, re
+import os, glob, re, sys
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -17,6 +17,8 @@ import ipywidgets as ipw
 from . import utils
 from .folders import Folders
 
+import warnings
+warnings.filterwarnings('ignore')
 
 class Bact:
     
@@ -199,13 +201,17 @@ class Bact:
              
         if self.use_ml:
             if self.ml is None:
-                raise NameError('No ML training available')
+                print('No ML training available. Load one.')
+                return False
             else:
                 self.segment_nucleiML(nucl_channel)
+                self.segment_bacteria(bact_channel)
+                self.bact_calc_intensity_channels()
         else:
             self.segment_nuclei(nucl_channel)
-        self.segment_bacteria(bact_channel)
-        self.bact_calc_intensity_channels()
+            self.segment_bacteria(bact_channel)
+            self.bact_calc_intensity_channels()
+        return True
 
         
     def save_segmentation(self):

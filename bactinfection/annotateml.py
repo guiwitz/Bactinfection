@@ -14,6 +14,7 @@ import numpy as np
 import pandas as pd
 import ipywidgets as ipw
 import pickle
+from IPython.display import clear_output
 
 from vispy.color.colormap import Colormap, ColorArray
 
@@ -289,6 +290,7 @@ class Annotate:
     def load_state(self, b):
         
         with self.out:
+            clear_output()
             self.bact.load_segmentation()
             
         self.channel_field.value = ', '.join(self.bact.channels)

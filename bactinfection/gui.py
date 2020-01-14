@@ -5,9 +5,9 @@ Class implementing an interactive ipywidgets gui for segmentation
 # Author: Guillaume Witz, Science IT Support, Bern University, 2019
 # License: BSD3
 
-
 import ipywidgets as ipw
 import pickle
+from IPython.display import clear_output
 
 from .annotateml import Annotate
 from .segmentation import Bact
@@ -38,7 +38,7 @@ class Gui:
         self.channel_field.observe(self.update_values, names='value')
         self.out = ipw.Output()
         
-        self.load_button = ipw.Button(description = 'Load segmentation')
+        self.load_button = ipw.Button(description = 'Load ML and/or segmentation',layout = {'width': '200px'},style = {'description_width': 'initial'})
         self.load_button.on_click(self.load_existing)
         
         self.load_otherML_button = ipw.Button(description = 'Load alternative ML')
@@ -46,13 +46,13 @@ class Gui:
         self.MLfolder = Folders()
         
         
-        self.analyze_button = ipw.Button(description = 'Run segmentation')
+        self.analyze_button = ipw.Button(description = 'Run segmentation',layout = {'width': '200px'},style = {'description_width': 'initial'})
         self.analyze_button.on_click(self.run_analysis)
         
-        self.save_button = ipw.Button(description = 'Save segmentation')
+        self.save_button = ipw.Button(description = 'Save segmentation',layout = {'width': '200px'},style = {'description_width': 'initial'})
         self.save_button.on_click(self.save_segmentation)
         
-        self.show_button = ipw.Button(description = 'Show segmentation')
+        self.show_button = ipw.Button(description = 'Show segmentation',layout = {'width': '200px'},style = {'description_width': 'initial'})
         self.show_button.on_click(self.show_segmentation)
         
         self.button_temp = ipw.Button()
@@ -83,6 +83,7 @@ class Gui:
     def load_existing(self,b):
         
         with self.out:
+            clear_output()
             self.bact.load_segmentation()
             
         self.channel_field.value = ', '.join(self.bact.channels)
@@ -94,6 +95,7 @@ class Gui:
         
     def load_otherML(self, b):
         with self.out:
+            clear_output()
             if len(self.MLfolder.file_list.value) == 0:
                 print('Pick an ML file')
             else:
@@ -103,11 +105,15 @@ class Gui:
             
             
     def run_analysis(self,b):
-        totfiles = len(self.bact.all_files)
-        for ind, f in enumerate(self.bact.all_files):
-            self.analyze_button.description = 'Processing file '+str(ind)+'/'+str(totfiles)+' ...'
-            self.bact.run_analysis(self.nucl_channel_seg.value,self.bact_channel_seg.value, self.bact.folder_name+'/'+f)
-        self.analyze_button.description = 'Run segmentation'
+        with self.out:
+            clear_output()
+            totfiles = len(self.bact.all_files)
+            for ind, f in enumerate(self.bact.all_files):
+                self.analyze_button.description = 'Processing file '+str(ind)+'/'+str(totfiles)+' ...'
+                valid = self.bact.run_analysis(self.nucl_channel_seg.value,self.bact_channel_seg.value, self.bact.folder_name+'/'+f)
+                if not valid:
+                    break
+            self.analyze_button.description = 'Run segmentation'
         
     def save_segmentation(self,b):
         self.bact.save_segmentation()
@@ -115,6 +121,7 @@ class Gui:
         
     def show_segmentation(self, b):
         with self.out:
+            clear_output()
             if len(self.bact.folders.file_list.value)>0:
                 self.bact.show_segmentation(self.bact.folders.file_list.value[0])
             else:
