@@ -29,6 +29,8 @@ class Gui:
         
         #self.load_existing = ipw.Checkbox(description = 'Load existing')
         self.use_ml = ipw.Checkbox(description = 'Use ML for nuclei')
+        self.use_ml.observe(self.update_useml, names='value')
+        
         self.nucl_channel_seg = ipw.Select(options = self.channel_field.value.replace(' ','').split(','),
                                      layout = {'width': '200px'},style = {'description_width': 'initial'})
         self.bact_channel_seg = ipw.Select(options = self.channel_field.value.replace(' ','').split(','),
@@ -36,7 +38,7 @@ class Gui:
         self.channel_field.observe(self.update_values, names='value')
         self.out = ipw.Output()
         
-        self.load_button = ipw.Button(description = 'Load')
+        self.load_button = ipw.Button(description = 'Load segmentation')
         self.load_button.on_click(self.load_existing)
         
         self.load_otherML_button = ipw.Button(description = 'Load alternative ML')
@@ -44,7 +46,7 @@ class Gui:
         self.MLfolder = Folders()
         
         
-        self.analyze_button = ipw.Button(description = 'Run analysis')
+        self.analyze_button = ipw.Button(description = 'Run segmentation')
         self.analyze_button.on_click(self.run_analysis)
         
         self.save_button = ipw.Button(description = 'Save segmentation')
@@ -74,6 +76,10 @@ class Gui:
         
         self.bact.fillholes = change['new']
         
+    def update_useml(self, change):
+        
+        self.bact.use_ml = change['new']
+        
     def load_existing(self,b):
         
         with self.out:
@@ -97,9 +103,11 @@ class Gui:
             
             
     def run_analysis(self,b):
-        for f in self.bact.all_files:
+        totfiles = len(self.bact.all_files)
+        for ind, f in enumerate(self.bact.all_files):
+            self.analyze_button.description = 'Processing file '+str(ind)+'/'+str(totfiles)+' ...'
             self.bact.run_analysis(self.nucl_channel_seg.value,self.bact_channel_seg.value, self.bact.folder_name+'/'+f)
-        
+        self.analyze_button.description = 'Run segmentation'
         
     def save_segmentation(self,b):
         self.bact.save_segmentation()
