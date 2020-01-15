@@ -61,12 +61,12 @@ class Gui:
         self.bact = Bact(channels=self.nucl_channel_seg.options, use_ml=self.use_ml.value)
         
     def update_values(self, change):
-        """call-back function for file upload. Uploads selected files
-        and completes the files list"""
+        """update channel parameters"""
         
         channels = change['new'].replace(' ','').split(',')
         self.nucl_channel_seg.options = channels
         self.bact_channel_seg.options = channels
+        self.bact.channels = channels
         
     def update_minsize(self, change):
         
