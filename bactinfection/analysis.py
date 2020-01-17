@@ -82,6 +82,8 @@ class Analysis(Bact):
           
     def load_infos(self,b = None):
         
+        self.load_analysis_button.description = 'Loading...'
+        
         with self.out:
             self.load_segmentation()
             
@@ -89,6 +91,8 @@ class Analysis(Bact):
         self.sel_channel_time.options = self.channels
         self.create_result()
         self.hour_select.options = self.result.hour.unique()
+        
+        self.load_analysis_button.description = 'Load segmentation'
 
         
         
