@@ -19,6 +19,12 @@ import skimage.filters
 from . import utils
 from .segmentation import Bact
 
+font = {'family': 'sans-serif',
+        'color':  'black',
+        'weight': 'normal',
+        'size': 16,
+        }
+
 class Analysis(Bact):
     
     def __init__(self):
@@ -51,6 +57,10 @@ class Analysis(Bact):
                                      layout = {'width': '200px'},style = {'description_width': 'initial'})
         self.sel_channel.observe(self.plot_byhour_callback, names = 'value')
         
+        self.sel_channel_time = ipw.SelectMultiple(options = [],
+                                     layout = {'width': '200px'},style = {'description_width': 'initial'})
+        self.sel_channel_time.observe(self.plot_time_curve, names = 'value')
+        
         self.button_plotbyhour = ipw.Button(description = 'Plot by hour')
         self.button_plotbyhour.on_click(self.plot_byhour_callback)
         
@@ -76,6 +86,7 @@ class Analysis(Bact):
             self.load_segmentation()
             
         self.sel_channel.options = self.channels
+        self.sel_channel_time.options = self.channels
         self.create_result()
         self.hour_select.options = self.result.hour.unique()
 
@@ -259,6 +270,7 @@ class Analysis(Bact):
                 
         return results
     
+    
     def plot_time_curve(self, b = None):
         
         res = self.calculage_time_curves()
@@ -267,13 +279,17 @@ class Analysis(Bact):
         self.out_plot2.clear_output()
         with self.out_plot2:
             
+            if len(self.sel_channel_time.value) == 0:
+                print('Select at least one channel')
+            
             import itertools
-            marker = itertools.cycle((',', '+', '.', 'o', '*')) 
+            marker = itertools.cycle(('+', '.', '*','v')) 
             fig, ax = plt.subplots(figsize=(10,7))
             for x,y in channel_group:
-                plt.plot(y.hour, y.number,'k'+next(marker)+'-', label=x)
-            ax.set_xlabel('Time')
-            ax.set_ylabel('Number')
+                if x in self.sel_channel_time.value:
+                    plt.plot(y.hour, y.number,'k'+next(marker)+'-', label=x, markersize = 10)
+            ax.set_xlabel('Time',fontdict=font)
+            ax.set_ylabel('Number',fontdict=font)
             ax.legend()
             plt.show()
             
