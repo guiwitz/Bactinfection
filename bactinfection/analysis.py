@@ -14,6 +14,7 @@ import pandas as pd
 import ipywidgets as ipw
 import pickle
 from sklearn import mixture
+import skimage.filters
 
 from . import utils
 from .segmentation import Bact
@@ -41,6 +42,8 @@ class Analysis(Bact):
         
         self.out = ipw.Output()
         self.out_plot = ipw.Output()
+        self.out_plot2 = ipw.Output()
+        
         self.load_button = ipw.Button(description = 'Load segmentation')
         self.load_button.on_click(self.load_infos)
         
@@ -51,7 +54,7 @@ class Analysis(Bact):
         self.button_plotbyhour = ipw.Button(description = 'Plot by hour')
         self.button_plotbyhour.on_click(self.plot_byhour_callback)
         
-        self.bin_width = ipw.IntSlider(min = 10, max = 1000, value = 100)
+        self.bin_width = ipw.IntSlider(min = 10, max = 1000, value = 50)
         self.bin_width.observe(self.plot_byhour_callback, names = 'value')
         self.hour_select = ipw.Select(options = [], value = None)
         self.hour_select.observe(self.plot_byhour_callback, names = 'value')
@@ -61,6 +64,9 @@ class Analysis(Bact):
         
         self.save_analysis_button = ipw.Button(description = 'Save analysis')
         self.save_analysis_button.on_click(self.save_analysis)
+        
+        self.plot_time_curve_button = ipw.Button(description = 'Plot time-curve')
+        self.plot_time_curve_button.on_click(self.plot_time_curve)
         
         self.GM = None
           
@@ -77,10 +83,20 @@ class Analysis(Bact):
         
     def create_result(self):
         
+        if not hasattr(self, 'random_channel_intensities'):
+            #self.bact_calc_random_intensity_channels()
+            self.bact_calc_mean_background()
+
         empty_dict = {x:[] for x in self.channels if x is not None}
+        empty_dict_ran = {x:[] for x in self.channels if x is not None}
+
         empty_dict['hour'] = []
         empty_dict['replicate'] = []
         empty_dict['filename'] = []
+        
+        empty_dict_ran['hour'] = []
+        empty_dict_ran['replicate'] = []
+        empty_dict_ran['filename'] = []
 
         for x in self.bacteria_channel_intensities:
             if self.bacteria_channel_intensities[x] is not None:
@@ -88,17 +104,83 @@ class Analysis(Bact):
                     if c is not None:
                         numvals = len(self.bacteria_channel_intensities[x][c])
                         empty_dict[c]+=list(self.bacteria_channel_intensities[x][c])
+                        
+                        numvals_ran = len(self.random_channel_intensities[x][c])
+                        empty_dict_ran[c]+=list(self.random_channel_intensities[x][c])
+                        
                 empty_dict['hour']+=numvals*[int(re.findall('\_(\d+)h\_', x)[0])]
                 empty_dict['filename']+=numvals*[x]
+                
+                empty_dict_ran['hour']+=numvals_ran*[int(re.findall('\_(\d+)h\_', x)[0])]
+                empty_dict_ran['filename']+=numvals_ran*[x]
+                
                 index = re.findall('\_(\d+)\.', x)
                 if len(index)== 0:
                     index = 0
                 else:
                     index = int(index[0])
                 empty_dict['replicate']+=numvals*[index]
+                empty_dict_ran['replicate']+=numvals_ran*[index]
         
         empty_dict = pd.DataFrame(empty_dict)
+        empty_dict_ran = pd.DataFrame(empty_dict_ran)
         self.result = empty_dict
+        self.result_ran = empty_dict_ran
+      
+    def bact_calc_mean_background(self):
+        
+        ch = self.channels.index(self.cell_channel)
+        self.random_channel_intensities = {}
+        
+        for f in self.all_files:
+            
+            self.import_file(f)
+            random_intensities = {}
+            sort_pix = np.sort(np.ravel(self.current_image[:,:,ch]))
+            th = np.mean(sort_pix[0:int(0.2*len(sort_pix))])
+            minfilt = skimage.filters.rank.minimum(self.current_image[:,:,ch]>th, skimage.morphology.disk(10))
+
+            mask = (minfilt>0) 
+            mask = mask * (1-self.bacteria_segmentation[self.current_file])
+            mask = mask * (1-self.nuclei_segmentation[self.current_file])
+            mask = mask>0
+            
+            for x in range(len(self.channels)):
+                if self.channels[x] is not None:
+                    random_intensities[self.channels[x]] = self.current_image[:,:,x][mask]
+                    self.random_channel_intensities[self.current_file] = random_intensities
+                    
+        
+    def bact_calc_random_intensity_channels(self):
+        
+        num_points = 1000
+        np.random.seed(42)
+        
+        ch = self.channels.index(self.bact_channel)
+        
+        self.random_channel_intensities = {}
+        for f in self.all_files:
+
+            self.import_file(f)
+            random_intensities = {}
+            
+            #pick random points below Otsu threshold and that don't belong to segmentation
+            th = skimage.filters.threshold_otsu(self.current_image[:,:,ch])
+            binary_mask = self.current_image[:,:,ch]<th
+            self.current_image[:,:,ch][~binary_mask]=0
+            
+            ranpos = np.random.randint([0,0],self.current_image[:,:,ch].shape,(num_points,2))
+            randpos_values = self.current_image[:,:,ch][ranpos[:,0],ranpos[:,1]]
+            ranpos = ranpos[randpos_values>0,:]
+            
+            for x in range(len(self.channels)):
+                if self.channels[x] is not None:
+                    randpos_values = self.current_image[:,:,x][ranpos[:,0],ranpos[:,1]]
+                    randpos_values = randpos_values[randpos_values>0]
+                    random_intensities[self.channels[x]] = randpos_values
+
+                    self.random_channel_intensities[self.current_file] = random_intensities
+
         
     def pool_intensities(self):
         pooled = {k: np.concatenate([self.bacteria_channel_intensities[x][k] for x in self.bacteria_channel_intensities.keys()])
@@ -114,13 +196,16 @@ class Analysis(Bact):
             self.plot_split_intensities(bin_width = self.bin_width.value,
                          channel = self.sel_channel.value,
                          hour = self.hour_select.value)
-            
+    
+    
     def plot_split_intensities(self, channel = None, hour = None, bin_width = 10, min = 0, max = 3000):
         if (len(channel) == 0) or (hour is None) :
             print('select a channel and an hour')
         else:
             grouped = self.result.groupby('hour')
             sel_group = grouped.get_group(hour)
+            grouped_ran = self.result_ran.groupby('hour')
+            sel_group_ran = grouped_ran.get_group(hour)
             fig, ax = plt.subplots(figsize=(10,7))
             for c in channel:
                 self.split(sel_group[c].values)
@@ -128,7 +213,16 @@ class Analysis(Bact):
                 xdata = np.array([0.5*(xdata[x]+xdata[x+1]) for x in range(len(xdata)-1)])
                 ind1 = 0
                 ind2 = 1
-                ax.bar(x=xdata, height=hist_val, width=xdata[1]-xdata[0],color = 'gray',label='Data')
+                ax.bar(x=xdata, height=hist_val, width=xdata[1]-xdata[0],color = 'gray', label='Data')
+                
+                #fit background
+                out,_ = utils.fit_gaussian_hist(sel_group_ran[c].values, plotting = False)
+                #show histogram
+                hist_val_ran, xdata_ran = np.histogram(sel_group_ran[c].values,bins = np.arange(min,max,bin_width),density=True)
+                xdata_ran = np.array([0.5*(xdata_ran[x]+xdata_ran[x+1]) for x in range(len(xdata_ran)-1)])
+                ind1 = 0
+                ind2 = 1
+                ax.bar(x=xdata_ran, height=hist_val_ran, width=xdata_ran[1]-xdata_ran[0],color = 'red', alpha = 0.5, label='Random')
 
                 ax.plot(xdata,self.normal_fit(xdata,self.GM.weights_[ind1], 
                                                   self.GM.means_[ind1,0], self.GM.covariances_[ind1,0,0]**0.5),
@@ -137,16 +231,62 @@ class Analysis(Bact):
                                                   self.GM.means_[ind2,0], self.GM.covariances_[ind2,0,0]**0.5),
                                      'r',linewidth = 2, label='Cat2')
                 #ax.hist(sel_group[c], label = c, alpha = 0.5, bins = np.arange(min,max,bin_width))
+                ax.plot([out[0][1]+3*out[0][2],out[0][1]+3*out[0][2]],[0,np.max(hist_val_ran)],'green')
             ax.legend()
             ax.set_title('Hour '+str(hour))
             plt.show()
+            
+    def calculage_time_curves(self):
         
+        results = []
+        grouped = self.result.groupby('hour')
+        grouped_ran = self.result_ran.groupby('hour')
+        
+        for hour in self.hour_select.options:
+            
+            sel_group = grouped.get_group(hour)
+            sel_group_ran = grouped_ran.get_group(hour)
+            
+            for c in self.sel_channel.options:
+                #fit background
+                out,_ = utils.fit_gaussian_hist(sel_group_ran[c].values, plotting = False)
+                
+                #count events above threshold
+                threshold = out[0][1]+3*out[0][2]
+                num_above = np.sum(sel_group[c].values>threshold)
+                newitem = {'channel': c, 'hour': hour, 'number': num_above}
+                results.append(newitem)
+                
+        return results
+    
+    def plot_time_curve(self, b = None):
+        
+        res = self.calculage_time_curves()
+        res_pd = pd.DataFrame(res)
+        channel_group = res_pd.sort_values(by = 'hour').groupby('channel')
+        self.out_plot2.clear_output()
+        with self.out_plot2:
+            
+            import itertools
+            marker = itertools.cycle((',', '+', '.', 'o', '*')) 
+            fig, ax = plt.subplots(figsize=(10,7))
+            for x,y in channel_group:
+                plt.plot(y.hour, y.number,'k'+next(marker)+'-', label=x)
+            ax.set_xlabel('Time')
+            ax.set_ylabel('Number')
+            ax.legend()
+            plt.show()
+            
+            
+            
     def plot_result_groupedby_hour(self, min = 0, max = 3000, bin_width = 100, channels = None):
         
         if channels is None:
             channels = self.channels
         grouped = self.result.groupby('hour')
+        grouped_ran = self.result_ran.groupby('hour')
         for x,y in grouped:
+        
             fig, ax = plt.subplots(figsize=(10,7))
             for c in channels:
                 if c is not None:
@@ -164,6 +304,7 @@ class Analysis(Bact):
                                                   self.GM.means_[ind2,0], GM.covariances_[ind2,0,0]**0.5),
                                      'r',linewidth = 2, label='Cat2')
                     #ax.hist(y[c], label = c, alpha = 0.5, bins = np.arange(min,max,bin_width))
+        
             ax.legend()
             ax.set_title(x)
 
@@ -193,6 +334,7 @@ class Analysis(Bact):
         with open(file_to_save, 'wb') as f:
             to_export = {'bact_channel':self.bact_channel,
                          'nucl_channel':self.nucl_channel,
+                         'cell_channel':self.cell_channel,
                          'bacteria_channel_intensities':self.bacteria_channel_intensities,
                          'channels':self.channels, 'all_files':self.all_files,
                         'result': self.result}

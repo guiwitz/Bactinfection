@@ -66,6 +66,7 @@ class Bact:
         self.result = None
         self.nucl_channel = None
         self.bact_channel = None
+        self.cell_channel = None
         self.minsize = 0
         self.fillholes = False
 
@@ -96,6 +97,9 @@ class Bact:
 
     def import_file(self, filepath):
         
+        if os.path.split(filepath)[0] == '':
+            filepath = self.folder_name+'/'+filepath
+            
         self.current_file = os.path.split(filepath)[1]
         filetype = os.path.splitext(self.current_file)[1]
         
@@ -221,6 +225,7 @@ class Bact:
         with open(file_to_save, 'wb') as f:
             to_export = {'bact_channel':self.bact_channel,
                          'nucl_channel':self.nucl_channel,
+                         'cell_channel':self.cell_channel,
                          'minsize': self.minsize,
                          'fillholes': self.fillholes,
                          'nuclei_segmentation':self.nuclei_segmentation,
@@ -251,21 +256,22 @@ class Bact:
         if self.bacteria_segmentation[local_file] is None:
             print('not yet segmented')
         
-        else:
-            #if local_file != self.current_file:
-            self.import_file(filepath)
+        #else:
+        #if local_file != self.current_file:
+        self.import_file(filepath)
 
-            viewer = napari.Viewer(ndisplay=2)
-            for ind, c in enumerate(self.channels):
-                if c is not None:
-                    
-                    viewer.add_image(self.current_image[:,:,ind],name = c)
+        viewer = napari.Viewer(ndisplay=2)
+        for ind, c in enumerate(self.channels):
+            if c is not None:
+                
+                viewer.add_image(self.current_image[:,:,ind],name = c)
+        if self.bacteria_segmentation[local_file] is not None:
             viewer.add_labels(skimage.morphology.label(self.bacteria_segmentation[local_file]),
                              name = 'bactseg')
             viewer.add_labels(skimage.morphology.label(self.nuclei_segmentation[local_file]),
                              name = 'nucleiseg')
-            self.viewer = viewer
-            self.create_key_bindings()
+        self.viewer = viewer
+        self.create_key_bindings()
             
     def create_key_bindings(self):
         

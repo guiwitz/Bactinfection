@@ -35,6 +35,8 @@ class Gui:
                                      layout = {'width': '200px'},style = {'description_width': 'initial'})
         self.bact_channel_seg = ipw.Select(options = self.channel_field.value.replace(' ','').split(','),
                                      layout = {'width': '200px'},style = {'description_width': 'initial'})
+        self.cell_channel_seg = ipw.Select(options = self.channel_field.value.replace(' ','').split(','),
+                                     layout = {'width': '200px'},style = {'description_width': 'initial'})
         self.channel_field.observe(self.update_values, names='value')
         self.out = ipw.Output()
         
@@ -66,6 +68,7 @@ class Gui:
         channels = change['new'].replace(' ','').split(',')
         self.nucl_channel_seg.options = channels
         self.bact_channel_seg.options = channels
+        self.cell_channel_seg.options = channels
         self.bact.channels = channels
         
     def update_minsize(self, change):
@@ -89,6 +92,7 @@ class Gui:
         self.channel_field.value = ', '.join(self.bact.channels)
         self.nucl_channel_seg.value = self.bact.nucl_channel
         self.bact_channel_seg.value = self.bact.bact_channel
+        self.cell_channel_seg.value = self.bact.cell_channel
         self.minsize_field.value = self.bact.minsize
         self.fillholes_checks.value = self.bact.fillholes
         
