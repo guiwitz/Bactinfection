@@ -78,6 +78,9 @@ class Analysis(Bact):
         self.plot_time_curve_button = ipw.Button(description = 'Plot time-curve')
         self.plot_time_curve_button.on_click(self.plot_time_curve)
         
+        self.save_time_curve_plot_button = ipw.Button(description = 'Save Plot time-curve')
+        self.save_time_curve_plot_button.on_click(self.save_time_curve_plot)
+        
         self.GM = None
           
     def load_infos(self,b = None):
@@ -298,6 +301,16 @@ class Analysis(Bact):
             ax.set_ylabel('Number',fontdict=font)
             ax.legend()
             plt.show()
+            self.time_curve_fig = fig
+            
+    def save_time_curve_plot(self, b = None):
+        
+        if not os.path.isdir(self.folder_name+'/Analyzed/'):
+            os.makedirs(self.folder_name+'/Analyzed/',exist_ok=True)
+            
+        file_to_save = self.folder_name+'/Analyzed/'+os.path.split(self.folder_name)[-1]+'_timecurve.png'
+        self.time_curve_fig.savefig(file_to_save)
+
             
             
             
