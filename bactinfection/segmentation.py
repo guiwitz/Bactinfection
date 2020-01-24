@@ -12,13 +12,12 @@ import pandas as pd
 import skimage
 import napari
 import pickle
-import ipywidgets as ipw
+#import ipywidgets as ipw
 
 from . import utils
-from .folders import Folders
 
-import warnings
-warnings.filterwarnings('ignore')
+#import warnings
+#warnings.filterwarnings('ignore')
 
 class Bact:
     
@@ -50,8 +49,9 @@ class Bact:
         
         #self.folder_name = folder_name
         #self.current_file = None
-        self.folders = Folders()
-        self.folders.file_list.observe(self.get_filenames, names='options')
+        
+        
+        #self.out_control = ipw.Output()
         
         self.channels = channels
         self.use_ml = use_ml
@@ -68,30 +68,14 @@ class Bact:
         self.bact_channel = None
         self.cell_channel = None
         self.minsize = 0
-        self.fillholes = False
-
-        self.get_filenames(None)
-        self.initialize_output()        
+        self.fillholes = False        
         
-            
-    def get_filenames(self, change):
-        """Initialize file list with lsm files present in folder"""
-        
-        
-        self.all_files = [
-            os.path.split(x)[1] for x in self.folders.cur_dir.glob("*.oir")]
-        if len(self.all_files)>0:
-            self.current_file = os.path.split(self.all_files[0])[1]
-            
-        self.folder_name = self.folders.cur_dir.as_posix()
-        self.initialize_output()
       
     def initialize_output(self):
         
         self.nuclei_segmentation = {os.path.split(x)[1]: None for x in self.all_files}
         self.bacteria_segmentation = {os.path.split(x)[1]: None for x in self.all_files}
         self.annotations = {os.path.split(x)[1]: None for x in self.all_files}
-        
         self.bacteria_channel_intensities = {os.path.split(x)[1]: None for x in self.all_files}
         
 
@@ -298,14 +282,5 @@ class Bact:
             self.viewer.layers[-2].data = skimage.morphology.label(self.bacteria_segmentation[local_file])
             self.viewer.layers[-1].data = skimage.morphology.label(self.nuclei_segmentation[local_file])
                           
-    
-    def interactivity(self):
-        
-        self.button_show = ipw.Button()
-        self.button_show.on_click(self.on_click_show_seg)
-        
-    def on_click_show_seg(self,b):
-        
-        self.show_segmentation()
         
     

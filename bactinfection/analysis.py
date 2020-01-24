@@ -7,6 +7,7 @@ Class implementing analysis of segmentation data
 
 
 import os
+from pathlib import Path
 import re
 import matplotlib.pyplot as plt
 import numpy as np
@@ -18,6 +19,8 @@ import skimage.filters
 
 from . import utils
 from .segmentation import Bact
+from .folders import Folders
+
 
 font = {'family': 'sans-serif',
         'color':  'black',
@@ -45,6 +48,21 @@ class Analysis(Bact):
         
         """
         Bact.__init__(self)
+        
+        #Recover and handle default settings
+        self.notebook_path = os.getcwd()
+        self.default_path_text = ipw.Text(layout = {'width': '600px'},style = {'description_width': 'initial'})
+        self.default_path_button = ipw.Button(description = 'Update default path',layout = {'width': '200px'},
+                                style = {'description_width': 'initial'})
+        self.default_path_button.on_click(self.change_default)
+        
+        self.default_path_from_browser_button = ipw.Button(description = 'Update using browser',layout = {'width': '200px'},
+                                style = {'description_width': 'initial'})
+        self.default_path_from_browser_button.on_click(self.change_default_from_browser)
+
+        
+        self.folders = Folders()
+        self.folders.file_list.observe(self.get_filenames, names='options')
         
         self.out = ipw.Output()
         self.out_plot = ipw.Output()
@@ -82,6 +100,50 @@ class Analysis(Bact):
         self.save_time_curve_plot_button.on_click(self.save_time_curve_plot)
         
         self.GM = None
+        
+        #recover default path
+        if os.path.isfile('settings.txt'):
+            with open('settings.txt','r') as f:
+                default_path = f.readline()
+                os.chdir(default_path)
+                self.folders.cur_dir = Path('.').resolve()
+                self.folders.refresh()
+                self.default_path_text.value = default_path
+        else:
+            with open('settings.txt', 'w') as f:
+                f.write(os.getcwd())
+                     
+    
+    def change_default(self, b):
+        
+        new_path = os.path.normpath(self.default_path_text.value)
+        with self.out:
+            if not os.path.isdir(new_path):
+                print('Not a correct path')
+        with open(os.path.join(self.notebook_path,'settings.txt'), 'w') as f:
+            f.write(new_path)
+            self.folders.cur_dir = Path('.').resolve()
+            self.folders.refresh()
+            
+    def change_default_from_browser(self, b):
+        
+        new_path = self.folders.cur_dir.as_posix()
+        self.default_path_text.value = new_path
+        with open(os.path.join(self.notebook_path,'settings.txt'), 'w') as f:
+            f.write(new_path)
+        
+    def get_filenames(self, change = None):
+        """Initialize file list with lsm files present in folder"""
+        
+        #with self.outcheck:
+        #    print('here')
+        self.all_files = [
+            os.path.split(x)[1] for x in self.folders.cur_dir.glob("*.oir")]
+        if len(self.all_files)>0:
+            self.current_file = os.path.split(self.all_files[0])[1]
+            
+        self.folder_name = self.folders.cur_dir.as_posix()
+        self.initialize_output()
           
     def load_infos(self,b = None):
         

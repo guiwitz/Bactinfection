@@ -8,6 +8,7 @@ Class implementing a simple file browser for Jupyter
 
 import ipywidgets as ipw
 from pathlib import Path
+import time
 
 class Folders:
     
@@ -22,7 +23,7 @@ class Folders:
         self.file_list = ipw.SelectMultiple(rows=rows, layout={"width": "500px"})
         self.file_list.options = ['..']+self.get_files()
         self.file_list.value = ()
-        self.file_list.observe(self.move_folders, names='value')
+        self.file_list.observe(self.move_folders, names=['value'])
         
         self.refresh_button = ipw.Button(description = 'Refresh folder content', style = style, layout = layout)
         self.refresh_button.on_click(self.refresh)
@@ -37,44 +38,37 @@ class Folders:
         
         return current_folders+current_files
     
-    def refresh(self, b):
+    def refresh(self, b=None):
         
-        self.file_list.unobserve(self.move_folders, names='value')
-        self.file_list.options = ['..']+self.get_files()
+        #with self.out:
+        #    print('refresh')
+        #self.file_list.unobserve(self.move_folders, names='value')
+        self.file_list.index = ()
         self.file_list.value = ()
-        self.file_list.observe(self.move_folders, names='value')
+        self.file_list.options = ['..']+self.get_files()
+        
+        #self.file_list.observe(self.move_folders, names='value')
     
     def move_folders(self, change):
         
+        #with self.out:
+        #    print('move')
         if len(change['new'])==0:
-            self.cur_dir = self.cur_dir.resolve().parent
+            None
+            #self.cur_dir = self.cur_dir.resolve().parent
         else:
             if change['new'][0] == '..':
 
                 self.cur_dir = self.cur_dir.resolve().parent
-
-                self.file_list.unobserve(self.move_folders, names='value')
-                self.file_list.options = ['..']+self.get_files()
-                self.file_list.value = ()
-                self.file_list.observe(self.move_folders, names='value')
-
+                self.refresh()
             else:
 
                 old_dir = self.cur_dir
                 self.cur_dir = self.cur_dir.joinpath(change['new'][0])
                 if self.cur_dir.is_dir():
-
-                    self.file_list.unobserve(self.move_folders, names='value')
-                    self.file_list.options = ['..']+self.get_files()
-                    self.file_list.value = ()
-                    self.file_list.observe(self.move_folders, names='value')
+                    self.refresh()
                 else:
-                    self.cur_dir = old_dir
-                    
-                    
-                    
-                    
-                    
+                    self.cur_dir = old_dir  
                     
                     
                     
