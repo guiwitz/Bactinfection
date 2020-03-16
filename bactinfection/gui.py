@@ -66,6 +66,10 @@ class Gui(Bact):
 
         self.use_ml_check = ipw.Checkbox(description="Use ML for nuclei")
         self.use_ml_check.observe(self.update_useml, names="value")
+        
+        self.use_cellpose_check = ipw.Checkbox(description="Use cellpose for nuclei")
+        self.use_cellpose_check.observe(self.update_cellpose, names="value")
+        self.model = None
 
         self.nucl_channel_seg = ipw.Select(
             options=self.channel_field.value.replace(" ", "").split(","),
@@ -211,6 +215,16 @@ class Gui(Bact):
     def update_useml(self, change):
 
         self.use_ml = change["new"]
+        
+    def update_cellpose(self, change):
+
+        self.use_cellpose = change["new"]
+        if self.use_cellpose is True and self.model is None:
+            import mxnet
+            from cellpose import models
+            model = models.Cellpose(device=mxnet.cpu(), model_type='nuclei')
+            self.model = model
+
 
     def load_existing(self, b):
 

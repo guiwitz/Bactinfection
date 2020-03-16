@@ -2,6 +2,9 @@ name: bactinfection
 channels:
   - conda-forge
 dependencies:
+  - python<=3.7
+  - mkl=2019.3
+  - numba>=0.43.1
   - scipy
   - numpy
   - matplotlib
@@ -14,10 +17,16 @@ dependencies:
   - nodejs
   - pip
   - pip:
+    - mxnet-mkl
+    - opencv_python
+    - natsort
+    - google-cloud-storage
+    - tqdm
     - python-bioformats
     - oiffile
     - napari
     - scikit-learn
     - git+https://github.com/guiwitz/bactinfection.git@master#egg=bactinfection
+    - cellpose
 #jupyter labextension install @jupyter-widgets/jupyterlab-manager
 #jupyter labextension install @jupyter-voila/jupyterlab-preview

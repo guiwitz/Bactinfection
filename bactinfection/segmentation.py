@@ -53,6 +53,7 @@ class Bact:
 
         self.channels = channels
         self.use_ml = use_ml
+        self.use_cellpose = False
 
         self.current_image = None
         self.current_image_med = None
@@ -105,6 +106,16 @@ class Bact:
         ch = self.channels.index(channel)
 
         nucle_seg = utils.segment_nuclei(self.current_image[:, :, ch], radius=0)
+        nucl_mask = nucle_seg > 0
+
+        self.current_nucl_mask = nucl_mask
+        self.nuclei_segmentation[self.current_file] = nucl_mask
+        
+    def segment_nuclei_cellpose(self, channel):
+
+        ch = self.channels.index(channel)
+
+        nucle_seg = utils.segment_nuclei_cellpose(self.current_image[:, :, ch], self.model)
         nucl_mask = nucle_seg > 0
 
         self.current_nucl_mask = nucl_mask
@@ -203,11 +214,16 @@ class Bact:
                 self.segment_nucleiML(nucl_channel)
                 self.segment_bacteria(bact_channel)
                 self.bact_calc_intensity_channels()
+        elif self.use_cellpose:
+            self.segment_nuclei_cellpose(nucl_channel)
+            self.segment_bacteria(bact_channel)
+            self.bact_calc_intensity_channels()
         else:
             self.segment_nuclei(nucl_channel)
             self.segment_bacteria(bact_channel)
             self.bact_calc_intensity_channels()
         return True
+    
 
     def save_segmentation(self):
         if not os.path.isdir(self.folder_name + "/Segmented/"):

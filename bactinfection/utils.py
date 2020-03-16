@@ -16,6 +16,7 @@ from skimage.morphology import binary_closing, watershed, label, binary_opening,
 from skimage.filters import threshold_li, gaussian
 from skimage.feature import match_template, peak_local_max
 import skimage
+import skimage.transform
 import scipy.ndimage as ndi
 import oiffile
 
@@ -91,6 +92,13 @@ def segment_nuclei(image, radius=15):
     im_water = watershed(-image, markers=label(peaks), mask=mask_nucl)#, compactness=1)"""
 
     return mask_label
+
+def segment_nuclei_cellpose(image, model):
+    
+    masks, flows, styles, diams = model.eval([image[::4,::4]], channels = [[0,]])
+    mask = skimage.transform.resize(masks[0],image.shape,preserve_range=True,order=0)
+    
+    return mask
 
 
 # create beacteria template
