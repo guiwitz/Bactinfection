@@ -183,9 +183,21 @@ class Analysis(Bact):
             # self.bact_calc_random_intensity_channels()
             self.bact_calc_mean_background()
 
-        measurements = pd.concat([self.bact_measurements[x] for x in self.bact_measurements if self.bact_measurements[x] is not None])
-        measurements['hour'] = measurements.filename.apply(lambda x: int(re.findall("\_(\d+)h\_",x)[0]))
-        measurements['replicate'] = measurements.filename.apply(lambda x: int(re.findall("\_(\d+)\.",x)[0]) if len(re.findall("\_(\d+)\.",x))>0 else 0)
+        measurements = pd.concat(
+            [
+                self.bact_measurements[x]
+                for x in self.bact_measurements
+                if self.bact_measurements[x] is not None
+            ]
+        )
+        measurements["hour"] = measurements.filename.apply(
+            lambda x: int(re.findall("\_(\d+)h\_", x)[0])
+        )
+        measurements["replicate"] = measurements.filename.apply(
+            lambda x: int(re.findall("\_(\d+)\.", x)[0])
+            if len(re.findall("\_(\d+)\.", x)) > 0
+            else 0
+        )
 
         self.result = measurements
         self.result_ran = self.bact_calc_mean_background()
@@ -195,23 +207,33 @@ class Analysis(Bact):
         self.random_channel_intensities = {}
         dict_list = []
         for f in self.all_files:
-            
+
             self.import_file(f)
             random_intensities = {}
             mask = self.cell_segmentation[self.current_file]
 
             for x in range(len(self.channels)):
                 if self.channels[x] is not None:
-                    random_intensities = pd.DataFrame({'filename': self.current_file, 'mean_intensity': self.current_image[:, :, x][mask],
-                                 'channel': self.channels[x]})
+                    random_intensities = pd.DataFrame(
+                        {
+                            "filename": self.current_file,
+                            "mean_intensity": self.current_image[:, :, x][mask],
+                            "channel": self.channels[x],
+                        }
+                    )
                     dict_list.append(random_intensities)
-        
+
         random_measurements = pd.concat(dict_list)
-        random_measurements['hour'] = random_measurements.filename.apply(lambda x: int(re.findall("\_(\d+)h\_",x)[0]))
-        random_measurements['replicate'] = random_measurements.filename.apply(lambda x: int(re.findall("\_(\d+)\.",x)[0]) if len(re.findall("\_(\d+)\.",x))>0 else 0)
-        
+        random_measurements["hour"] = random_measurements.filename.apply(
+            lambda x: int(re.findall("\_(\d+)h\_", x)[0])
+        )
+        random_measurements["replicate"] = random_measurements.filename.apply(
+            lambda x: int(re.findall("\_(\d+)\.", x)[0])
+            if len(re.findall("\_(\d+)\.", x)) > 0
+            else 0
+        )
+
         return random_measurements
-        
 
     def bact_calc_random_intensity_channels(self):
 
@@ -282,15 +304,15 @@ class Analysis(Bact):
         else:
             grouped = self.result.groupby("hour")
             sel_group = grouped.get_group(hour)
-            channel_group = sel_group.groupby('channel')
+            channel_group = sel_group.groupby("channel")
             grouped_ran = self.result_ran.groupby("hour")
             sel_group_ran = grouped_ran.get_group(hour)
-            channel_group_ran = sel_group_ran.groupby('channel')
+            channel_group_ran = sel_group_ran.groupby("channel")
             fig, ax = plt.subplots(figsize=(10, 7))
             for c in channel:
-                
+
                 self.split(channel_group.get_group(c).mean_intensity.values)
-                
+
                 hist_val, xdata = np.histogram(
                     channel_group.get_group(c).mean_intensity,
                     bins=np.arange(0, 1000, 10),
@@ -378,8 +400,8 @@ class Analysis(Bact):
 
         for hour in self.hour_select.options:
 
-            sel_group = (grouped.get_group(hour)).groupby('channel')
-            sel_group_ran = (grouped_ran.get_group(hour)).groupby('channel')
+            sel_group = (grouped.get_group(hour)).groupby("channel")
+            sel_group_ran = (grouped_ran.get_group(hour)).groupby("channel")
 
             for c in self.sel_channel.options:
                 # fit background
@@ -389,7 +411,9 @@ class Analysis(Bact):
 
                 # count events above threshold
                 threshold = out[0][1] + 3 * out[0][2]
-                num_above = np.sum(sel_group.get_group(c).mean_intensity.values > threshold)
+                num_above = np.sum(
+                    sel_group.get_group(c).mean_intensity.values > threshold
+                )
                 newitem = {"channel": c, "hour": hour, "number": num_above}
                 results.append(newitem)
 

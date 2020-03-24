@@ -66,7 +66,7 @@ class Gui(Bact):
 
         self.use_ml_check = ipw.Checkbox(description="Use ML for nuclei")
         self.use_ml_check.observe(self.update_useml, names="value")
-        
+
         self.use_cellpose_check = ipw.Checkbox(description="Use cellpose for nuclei")
         self.use_cellpose_check.observe(self.update_cellpose, names="value")
         self.model = None
@@ -215,7 +215,7 @@ class Gui(Bact):
     def update_useml(self, change):
 
         self.use_ml = change["new"]
-        
+
     def update_cellpose(self, change):
 
         self.use_cellpose = change["new"]
@@ -259,16 +259,16 @@ class Gui(Bact):
                         print("ML model loaded")
 
     def run_interactive_analysis(self, b):
-        
+
         with self.out:
-            print('here')
+            print("here")
             clear_output()
             totfiles = len(self.all_files)
             if totfiles == 0:
                 print("Load folder first")
                 self.analyze_button.description = "Run segmentation"
             else:
-                print('here')
+                print("here")
                 self.import_file(self.folder_name + "/" + self.all_files[0])
                 if len(self.channels) > self.current_image.shape[2]:
                     print("Too many channels defined")

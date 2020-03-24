@@ -93,11 +93,12 @@ def segment_nuclei(image, radius=15):
 
     return mask_label
 
+
 def segment_nuclei_cellpose(image, model):
-    
-    masks, flows, styles, diams = model.eval([image[::4,::4]], channels = [[0,]])
-    mask = skimage.transform.resize(masks[0],image.shape,preserve_range=True,order=0)
-    
+
+    masks, flows, styles, diams = model.eval([image[::4, ::4]], channels=[[0,]])
+    mask = skimage.transform.resize(masks[0], image.shape, preserve_range=True, order=0)
+
     return mask
 
 
@@ -141,11 +142,15 @@ def detect_bacteria(image, rot_template, mask=None):
 
     return maxproj
 
+
 def rotational_matching(image, rot_template):
-    all_match = np.zeros((len(rot_template)+1, image.shape[0], image.shape[1]))
+    all_match = np.zeros((len(rot_template) + 1, image.shape[0], image.shape[1]))
     for ind in range(len(rot_template)):
-        all_match[ind+1, :, :] = match_template(image, rot_template[ind], pad_input=True)
+        all_match[ind + 1, :, :] = match_template(
+            image, rot_template[ind], pad_input=True
+        )
     return all_match
+
 
 def remove_small(image, minsize):
 
