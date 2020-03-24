@@ -130,9 +130,7 @@ def create_template(length=7, width=3):
 def detect_bacteria(image, rot_template, mask=None):
 
     # do template matching with all rotated templates
-    all_match = np.zeros((len(rot_template), image.shape[0], image.shape[1]))
-    for ind in range(len(rot_template)):
-        all_match[ind, :, :] = match_template(image, rot_template[ind], pad_input=True)
+    all_match = rotational_matching(image, rot_template)
 
     # calculate max proj of those images matched with templates at different angles
     # maxarg contains for each pixel the plane index of best match and hence the angle
@@ -143,6 +141,11 @@ def detect_bacteria(image, rot_template, mask=None):
 
     return maxproj
 
+def rotational_matching(image, rot_template):
+    all_match = np.zeros((len(rot_template)+1, image.shape[0], image.shape[1]))
+    for ind in range(len(rot_template)):
+        all_match[ind+1, :, :] = match_template(image, rot_template[ind], pad_input=True)
+    return all_match
 
 def remove_small(image, minsize):
 
@@ -202,7 +205,7 @@ def fit_gaussian_hist(data, plotting=True):
         plt.bar(x=xdata, height=ydata, width=30, color="r")
         plt.plot(xdata, fitfunc(out[0], xdata))
         plt.plot(
-            [out[0][1] + 3 * out[0][2], out[0][1] + 3 * out[0][2]],
+            [out[0][1] + 3 * np.abs(out[0][2]), out[0][1] + 3 * np.abs(out[0][2])],
             [0, np.max(ydata)],
             "green",
         )

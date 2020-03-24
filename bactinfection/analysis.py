@@ -148,7 +148,7 @@ class Analysis(Bact):
             f.write(new_path)
 
     def get_filenames(self, change=None):
-        """Initialize file list with lsm files present in folder"""
+        """Initialize file list with oir files present in folder"""
 
         # with self.outcheck:
         #    print('here')
@@ -183,76 +183,35 @@ class Analysis(Bact):
             # self.bact_calc_random_intensity_channels()
             self.bact_calc_mean_background()
 
-        empty_dict = {x: [] for x in self.channels if x is not None}
-        empty_dict_ran = {x: [] for x in self.channels if x is not None}
+        measurements = pd.concat([self.bact_measurements[x] for x in self.bact_measurements if self.bact_measurements[x] is not None])
+        measurements['hour'] = measurements.filename.apply(lambda x: int(re.findall("\_(\d+)h\_",x)[0]))
+        measurements['replicate'] = measurements.filename.apply(lambda x: int(re.findall("\_(\d+)\.",x)[0]) if len(re.findall("\_(\d+)\.",x))>0 else 0)
 
-        empty_dict["hour"] = []
-        empty_dict["replicate"] = []
-        empty_dict["filename"] = []
-
-        empty_dict_ran["hour"] = []
-        empty_dict_ran["replicate"] = []
-        empty_dict_ran["filename"] = []
-
-        for x in self.bacteria_channel_intensities:
-            if self.bacteria_channel_intensities[x] is not None:
-                for c in self.channels:
-                    if c is not None:
-                        numvals = len(self.bacteria_channel_intensities[x][c])
-                        empty_dict[c] += list(self.bacteria_channel_intensities[x][c])
-
-                        numvals_ran = len(self.random_channel_intensities[x][c])
-                        empty_dict_ran[c] += list(self.random_channel_intensities[x][c])
-
-                empty_dict["hour"] += numvals * [int(re.findall("\_(\d+)h\_", x)[0])]
-                empty_dict["filename"] += numvals * [x]
-
-                empty_dict_ran["hour"] += numvals_ran * [
-                    int(re.findall("\_(\d+)h\_", x)[0])
-                ]
-                empty_dict_ran["filename"] += numvals_ran * [x]
-
-                index = re.findall("\_(\d+)\.", x)
-                if len(index) == 0:
-                    index = 0
-                else:
-                    index = int(index[0])
-                empty_dict["replicate"] += numvals * [index]
-                empty_dict_ran["replicate"] += numvals_ran * [index]
-
-        empty_dict = pd.DataFrame(empty_dict)
-        empty_dict_ran = pd.DataFrame(empty_dict_ran)
-        self.result = empty_dict
-        self.result_ran = empty_dict_ran
+        self.result = measurements
+        self.result_ran = self.bact_calc_mean_background()
 
     def bact_calc_mean_background(self):
 
-        ch = self.channels.index(self.cell_channel)
         self.random_channel_intensities = {}
-
+        dict_list = []
         for f in self.all_files:
-
+            
             self.import_file(f)
             random_intensities = {}
-            sort_pix = np.sort(np.ravel(self.current_image[:, :, ch]))
-            th = np.mean(sort_pix[0 : int(0.2 * len(sort_pix))])
-            minfilt = skimage.filters.rank.minimum(
-                self.current_image[:, :, ch] > th, skimage.morphology.disk(10)
-            )
-
-            mask = minfilt > 0
-            mask = mask * (1 - self.bacteria_segmentation[self.current_file])
-            mask = mask * (1 - self.nuclei_segmentation[self.current_file])
-            mask = mask > 0
+            mask = self.cell_segmentation[self.current_file]
 
             for x in range(len(self.channels)):
                 if self.channels[x] is not None:
-                    random_intensities[self.channels[x]] = self.current_image[:, :, x][
-                        mask
-                    ]
-                    self.random_channel_intensities[
-                        self.current_file
-                    ] = random_intensities
+                    random_intensities = pd.DataFrame({'filename': self.current_file, 'mean_intensity': self.current_image[:, :, x][mask],
+                                 'channel': self.channels[x]})
+                    dict_list.append(random_intensities)
+        
+        random_measurements = pd.concat(dict_list)
+        random_measurements['hour'] = random_measurements.filename.apply(lambda x: int(re.findall("\_(\d+)h\_",x)[0]))
+        random_measurements['replicate'] = random_measurements.filename.apply(lambda x: int(re.findall("\_(\d+)\.",x)[0]) if len(re.findall("\_(\d+)\.",x))>0 else 0)
+        
+        return random_measurements
+        
 
     def bact_calc_random_intensity_channels(self):
 
@@ -323,14 +282,18 @@ class Analysis(Bact):
         else:
             grouped = self.result.groupby("hour")
             sel_group = grouped.get_group(hour)
+            channel_group = sel_group.groupby('channel')
             grouped_ran = self.result_ran.groupby("hour")
             sel_group_ran = grouped_ran.get_group(hour)
+            channel_group_ran = sel_group_ran.groupby('channel')
             fig, ax = plt.subplots(figsize=(10, 7))
             for c in channel:
-                self.split(sel_group[c].values)
+                
+                self.split(channel_group.get_group(c).mean_intensity.values)
+                
                 hist_val, xdata = np.histogram(
-                    sel_group[c].values,
-                    bins=np.arange(min, max, bin_width),
+                    channel_group.get_group(c).mean_intensity,
+                    bins=np.arange(0, 1000, 10),
                     density=True,
                 )
                 xdata = np.array(
@@ -348,11 +311,11 @@ class Analysis(Bact):
 
                 # fit background
                 out, _ = utils.fit_gaussian_hist(
-                    sel_group_ran[c].values, plotting=False
+                    channel_group_ran.get_group(c).mean_intensity.values, plotting=False
                 )
                 # show histogram
                 hist_val_ran, xdata_ran = np.histogram(
-                    sel_group_ran[c].values,
+                    channel_group_ran.get_group(c).mean_intensity.values,
                     bins=np.arange(min, max, bin_width),
                     density=True,
                 )
@@ -415,18 +378,18 @@ class Analysis(Bact):
 
         for hour in self.hour_select.options:
 
-            sel_group = grouped.get_group(hour)
-            sel_group_ran = grouped_ran.get_group(hour)
+            sel_group = (grouped.get_group(hour)).groupby('channel')
+            sel_group_ran = (grouped_ran.get_group(hour)).groupby('channel')
 
             for c in self.sel_channel.options:
                 # fit background
                 out, _ = utils.fit_gaussian_hist(
-                    sel_group_ran[c].values, plotting=False
+                    sel_group_ran.get_group(c).mean_intensity.values, plotting=False
                 )
 
                 # count events above threshold
                 threshold = out[0][1] + 3 * out[0][2]
-                num_above = np.sum(sel_group[c].values > threshold)
+                num_above = np.sum(sel_group.get_group(c).mean_intensity.values > threshold)
                 newitem = {"channel": c, "hour": hour, "number": num_above}
                 results.append(newitem)
 

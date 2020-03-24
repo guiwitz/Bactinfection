@@ -10,6 +10,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
 import skimage
+import skimage.measure
+import skimage.morphology
 import napari
 import pickle
 
@@ -23,37 +25,53 @@ from . import utils
 
 class Bact:
     def __init__(
-        self, channels=None, corr_threshold=0.5, load_existing=False, use_ml=False
+        self, channels=None, all_files = None, folder_name = None, corr_threshold=0.5,
+        min_corr_vol = 5, use_ml=False, use_cellpose = False, model = None
     ):
 
         """Standard __init__ method.
         
         Parameters
         ----------
-        nulei : int
-            index of DAPI
-        GPF : int
-            index of GFP
-        cherry : int
-            index of 600nm channel
+        channels : list of str
+            list of available channels
+        all_files : list of str
+            list of files to analyze
+        folder_name : str
+            path of folder to analyze
+        corr_threshold : float
+            threshold cross-correlation for template matching
+        min_corr_vol : int
+            minimal number of voxels in rotational volume matching regions
+        use_ml : bool
+            use manual annotation and ML for nucleus segmentation
+        use_cellpose : bool
+            use cellpose for nucleus segmentation
+        model : cellpose model
+            cellpose model
         
         
         Attributes
         ----------
             
-        all_files = list
-            list of files to process
+        nucl_channel = str
+            name of nucleus channel
+        bact_channel = str
+            name of bacteria channel
+        cell_channel = str
+            name of cell channel
         
         """
 
-        # self.folder_name = folder_name
-        # self.current_file = None
-
-        # self.out_control = ipw.Output()
-
         self.channels = channels
+        self.all_files = all_files
+        self.folder_name = folder_name
+        self.corr_threshold = corr_threshold
+        self.min_corr_vol = min_corr_vol
         self.use_ml = use_ml
-        self.use_cellpose = False
+        self.use_cellpose = use_cellpose
+        self.model = model
+        
 
         self.current_image = None
         self.current_image_med = None
@@ -61,7 +79,6 @@ class Bact:
         self.maxproj = None
         self.bact_mask = None
         self.ml = None
-        self.corr_threshold = corr_threshold
         self.result = None
         self.nucl_channel = None
         self.bact_channel = None
@@ -73,8 +90,12 @@ class Bact:
 
         self.nuclei_segmentation = {os.path.split(x)[1]: None for x in self.all_files}
         self.bacteria_segmentation = {os.path.split(x)[1]: None for x in self.all_files}
+        self.cell_segmentation = {os.path.split(x)[1]: None for x in self.all_files}
         self.annotations = {os.path.split(x)[1]: None for x in self.all_files}
         self.bacteria_channel_intensities = {
+            os.path.split(x)[1]: None for x in self.all_files
+        }
+        self.bact_measurements = {
             os.path.split(x)[1]: None for x in self.all_files
         }
 
@@ -93,6 +114,13 @@ class Bact:
 
         self.current_image = image
 
+    def import_cellpose_model(self):
+        
+        import mxnet
+        from cellpose import models
+        model = models.Cellpose(device=mxnet.cpu(), model_type='nuclei')
+        self.model = model
+
     def calculate_median(self, channel):
 
         ch = self.channels.index(channel)
@@ -101,6 +129,23 @@ class Bact:
         )
         self.current_median_channel = channel
 
+    def segment_cells(self, channel):
+
+        ch = self.channels.index(channel)
+
+        back_pix = np.sort(np.ravel(self.current_image[:, :, ch]))[0:10000]
+        back_mean = np.mean(back_pix)
+        back_std = np.std(back_pix)
+
+        cell_mask = self.current_image[:, :, ch]>back_mean+10*back_std
+        cell_mask = skimage.morphology.binary_opening(cell_mask, selem=skimage.morphology.disk(5))
+
+        #cell_mask = self.current_image[:, :, ch] > skimage.filters.threshold_otsu(self.current_image[:, :, ch])
+
+        self.current_cell_mask = cell_mask
+        self.cell_segmentation[self.current_file] = cell_mask
+        
+        
     def segment_nuclei(self, channel):
 
         ch = self.channels.index(channel)
@@ -115,11 +160,14 @@ class Bact:
 
         ch = self.channels.index(channel)
 
-        nucle_seg = utils.segment_nuclei_cellpose(self.current_image[:, :, ch], self.model)
-        nucl_mask = nucle_seg > 0
+        if self.model is None:
+            print('No cellpose model provided')
+        else:
+            nucle_seg = utils.segment_nuclei_cellpose(self.current_image[:, :, ch], self.model)
+            nucl_mask = nucle_seg > 0
 
-        self.current_nucl_mask = nucl_mask
-        self.nuclei_segmentation[self.current_file] = nucl_mask
+            self.current_nucl_mask = nucl_mask
+            self.nuclei_segmentation[self.current_file] = nucl_mask
 
     def segment_nucleiML(self, channel):
 
@@ -151,31 +199,51 @@ class Bact:
 
     def segment_bacteria(self, channel):
 
-        # median filter the image to segment and calculate a threshold on it
-        self.calculate_median(channel)
-        self.calculate_threshold()
-
-        # if nuclei mask does not exist yet, calculate it
+        #recover nuclei and cell mask
         nucl_mask = self.nuclei_segmentation[self.current_file]
-        if nucl_mask is None:
-            self.segment_nuclei(channel)
+        cell_mask = self.cell_segmentation[self.current_file]
 
-        # create a bacteria template
+        #remove bright nuclei regions
+        cell_mask = cell_mask & ~nucl_mask
+        
+        #calculate median filter image
+        self.calculate_median(channel)
+        image = self.current_image_med
+        
+        #calculate an intensity threshold by fitting a gaussian on background
+        out, _  = utils.fit_gaussian_hist(image[cell_mask],plotting=False)
+        intensity_th = out[0][1]+3*np.abs(out[0][2])
+        intensity_mask = image > intensity_th
+
+        #do rotational template matching
         rot_templ = utils.create_template()
+        
+        all_match = utils.rotational_matching(image, rot_templ)
+        all_match = all_match[1::]
+        all_match = all_match*(1-nucl_mask)*cell_mask*intensity_mask
+        rotation_vol = all_match>self.corr_threshold
 
-        # im_test = -skimage.filters.farid(self.current_image_med)
-        # maxproj = utils.detect_bacteria(im_test, rot_templ, mask= nucl_mask)
-        maxproj = utils.detect_bacteria(
-            self.current_image_med, rot_templ, mask=nucl_mask
-        )
+        rotation_vol_label = skimage.measure.label(rotation_vol)
+        
+        for x in range(rotation_vol_label.shape[1]):
+            for y in range(rotation_vol_label.shape[2]):
+                if rotation_vol_label[0, x, y] > 0 and rotation_vol_label[-1,x,y] > 0:
+                    rotation_vol_label[rotation_vol_label == rotation_vol_label[-1,x,y]] = rotation_vol_label[0,x,y]
 
-        self.maxproj = maxproj
-        self.bact_mask = (maxproj > self.corr_threshold) * (
-            self.current_image_med > self.hard_threshold
-        )
+        rotation_vol_props = pd.DataFrame(skimage.measure.regionprops_table(rotation_vol_label, properties=('label','area','centroid')))
+        
+        sel_labels = rotation_vol_props[rotation_vol_props.area > self.min_corr_vol].label.values
+        indices = np.array(
+                [i if i in sel_labels else 0 for i in np.arange(rotation_vol_props.label.max() + 1)]
+            )
+        
+        new_label_image = indices[rotation_vol_label]  
+        new_label_image_proj = np.max(new_label_image,axis = 0)
+        self.bacteria_segmentation[self.current_file] = new_label_image_proj
 
-        self.bacteria_segmentation[self.current_file] = self.bact_mask
-
+        self.all_match = all_match
+        self.rotation_vol_label = rotation_vol_label
+        
     def calculate_threshold(self):
 
         binval, binpos = np.histogram(
@@ -185,24 +253,46 @@ class Bact:
         self.hard_threshold = hard_threshold
 
     def bact_calc_intensity_channels(self):
-        bact_labels = skimage.morphology.label(self.bact_mask)
 
-        intensities = {
-            self.channels[x]: skimage.measure.regionprops_table(
-                bact_labels,
-                self.current_image[:, :, x],
-                properties=("mean_intensity", "label"),
-            )["mean_intensity"]
-            for x in range(len(self.channels))
-            if self.channels[x] is not None
-        }
+        #bact_labels = skimage.morphology.label(self.bact_mask)
+        bact_labels = self.bacteria_segmentation[self.current_file]
+        if bact_labels.max()>0:
+            intensities = {
+                self.channels[x]: skimage.measure.regionprops_table(
+                    bact_labels,
+                    self.current_image[:, :, x],
+                    properties=("mean_intensity", "label"),
+                )["mean_intensity"]
+                for x in range(len(self.channels))
+                if self.channels[x] is not None
+            }
 
-        self.bacteria_channel_intensities[self.current_file] = intensities
+            self.bacteria_channel_intensities[self.current_file] = intensities
+        
+    def bact_measure(self):
+        #bact_mask = self.bacteria_segmentation[self.current_file]
+        #bact_labels = skimage.morphology.label(bact_mask)
 
-    def run_analysis(self, nucl_channel, bact_channel, filepath):
+        bact_labels = self.bacteria_segmentation[self.current_file]
+        if bact_labels.max()>0:
+            dataframes = []
+            for x in range(len(self.channels)):
+                if self.channels[x] is not None:
+                    measurements = skimage.measure.regionprops_table(
+                                bact_labels,
+                                self.current_image[:, :, x],
+                                properties=("mean_intensity", "label",'area','eccentricity'),
+                            )
+                    dataframes.append(pd.DataFrame({**measurements, **{'channel':self.channels[x]}, **{'filename':self.current_file}}))
+            
+            measure_df = pd.concat(dataframes)
+            self.bact_measurements[self.current_file] = measure_df
+
+    def run_analysis(self, nucl_channel, bact_channel, cell_channel, filepath):
 
         self.nucl_channel = nucl_channel
         self.bact_channel = bact_channel
+        self.cell_channel = cell_channel
 
         self.import_file(filepath)
 
@@ -212,20 +302,26 @@ class Bact:
                 return False
             else:
                 self.segment_nucleiML(nucl_channel)
-                self.segment_bacteria(bact_channel)
-                self.bact_calc_intensity_channels()
         elif self.use_cellpose:
             self.segment_nuclei_cellpose(nucl_channel)
-            self.segment_bacteria(bact_channel)
-            self.bact_calc_intensity_channels()
         else:
             self.segment_nuclei(nucl_channel)
-            self.segment_bacteria(bact_channel)
-            self.bact_calc_intensity_channels()
+        
+        self.segment_cells(cell_channel)
+        self.segment_bacteria(bact_channel)
+        self.bact_calc_intensity_channels()
+        self.bact_measure()
+
+        #self.bacteria_segmentation[self.current_file] = self.bacteria_segmentation[self.current_file]*self.cell_segmentation[self.current_file]
         return True
     
 
     def save_segmentation(self):
+
+        if self.folder_name is None:
+            print('No folder_name specified')
+            return None
+
         if not os.path.isdir(self.folder_name + "/Segmented/"):
             os.makedirs(self.folder_name + "/Segmented/", exist_ok=True)
         file_to_save = (
@@ -243,8 +339,10 @@ class Bact:
                 "fillholes": self.fillholes,
                 "nuclei_segmentation": self.nuclei_segmentation,
                 "bacteria_segmentation": self.bacteria_segmentation,
+                "cell_segmentation": self.cell_segmentation,
                 "annotations": self.annotations,
                 "bacteria_channel_intensities": self.bacteria_channel_intensities,
+                "bact_measurements": self.bact_measurements,
                 "channels": self.channels,
                 "all_files": self.all_files,
                 "ml": self.ml,
@@ -283,16 +381,21 @@ class Bact:
         viewer = napari.Viewer(ndisplay=2)
         for ind, c in enumerate(self.channels):
             if c is not None:
-
-                viewer.add_image(self.current_image[:, :, ind], name=c)
+                image_name = self.current_file+'_'+c
+                viewer.add_image(self.current_image[:, :, ind], name = image_name)
         if self.bacteria_segmentation[local_file] is not None:
             viewer.add_labels(
-                skimage.morphology.label(self.bacteria_segmentation[local_file]),
+                #skimage.morphology.label(self.bacteria_segmentation[local_file]),
+                self.bacteria_segmentation[local_file],
                 name="bactseg",
             )
             viewer.add_labels(
                 skimage.morphology.label(self.nuclei_segmentation[local_file]),
                 name="nucleiseg",
+            )
+            viewer.add_labels(
+                skimage.morphology.label(self.cell_segmentation[local_file]),
+                name="cellseg",
             )
         self.viewer = viewer
         self.create_key_bindings()
@@ -316,13 +419,18 @@ class Bact:
             self.import_file(self.folder_name + "/" + local_file)
             for ind, c in enumerate(self.channels):
                 if c is not None:
-                    layer_index = [x.name for x in self.viewer.layers].index(c)
+                    layer_index = [x.name.split('.')[1].split('_')[1] if '.' in x.name else x.name for x in self.viewer.layers].index(c)
                     self.viewer.layers[layer_index].data = self.current_image[:, :, ind]
+                    self.viewer.layers[layer_index].name = self.current_file+'_'+c
 
+            #self.viewer.layers[-3].data = skimage.morphology.label(
+            #    self.bacteria_segmentation[local_file]
+            self.viewer.layers[-3].data = self.bacteria_segmentation[local_file]
+            
             self.viewer.layers[-2].data = skimage.morphology.label(
-                self.bacteria_segmentation[local_file]
+                self.nuclei_segmentation[local_file]
             )
             self.viewer.layers[-1].data = skimage.morphology.label(
-                self.nuclei_segmentation[local_file]
+                self.cell_segmentation[local_file]
             )
 

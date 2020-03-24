@@ -144,7 +144,7 @@ class Gui(Bact):
             with open("settings.txt", "w") as f:
                 f.write(os.getcwd())
 
-        self.get_filenames(None)
+        self.get_filenames()
         self.initialize_output()
         self.update_values(None)
 
@@ -220,11 +220,7 @@ class Gui(Bact):
 
         self.use_cellpose = change["new"]
         if self.use_cellpose is True and self.model is None:
-            import mxnet
-            from cellpose import models
-            model = models.Cellpose(device=mxnet.cpu(), model_type='nuclei')
-            self.model = model
-
+            self.import_cellpose_model()
 
     def load_existing(self, b):
 
@@ -263,13 +259,16 @@ class Gui(Bact):
                         print("ML model loaded")
 
     def run_interactive_analysis(self, b):
+        
         with self.out:
+            print('here')
             clear_output()
             totfiles = len(self.all_files)
             if totfiles == 0:
                 print("Load folder first")
                 self.analyze_button.description = "Run segmentation"
             else:
+                print('here')
                 self.import_file(self.folder_name + "/" + self.all_files[0])
                 if len(self.channels) > self.current_image.shape[2]:
                     print("Too many channels defined")
@@ -288,6 +287,7 @@ class Gui(Bact):
                         valid = self.run_analysis(
                             self.nucl_channel_seg.value,
                             self.bact_channel_seg.value,
+                            self.cell_channel_seg.value,
                             self.folder_name + "/" + f,
                         )
                         if not valid:
