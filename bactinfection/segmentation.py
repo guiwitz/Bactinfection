@@ -91,6 +91,7 @@ class Bact:
         self.cell_channel = None
         self.minsize = 0
         self.fillholes = False
+        self.cellpose_diam = 60
 
     def initialize_output(self):
 
@@ -170,7 +171,7 @@ class Bact:
             print("No cellpose model provided")
         else:
             nucle_seg = utils.segment_nuclei_cellpose(
-                self.current_image[:, :, ch], self.model
+                self.current_image[:, :, ch], self.model, self.cellpose_diam
             )
             nucl_mask = nucle_seg > 0
 
@@ -207,6 +208,7 @@ class Bact:
 
     def segment_bacteria(self, channel):
 
+        n_std = 20
         # recover nuclei and cell mask
         nucl_mask = self.nuclei_segmentation[self.current_file]
         cell_mask = self.cell_segmentation[self.current_file]
@@ -220,11 +222,12 @@ class Bact:
 
         # calculate an intensity threshold by fitting a gaussian on background
         out, _ = utils.fit_gaussian_hist(image[cell_mask], plotting=False)
-        intensity_th = out[0][1] + 3 * np.abs(out[0][2])
+        intensity_th = out[0][1] + n_std * np.abs(out[0][2])
         intensity_mask = image > intensity_th
 
         # do rotational template matching
         rot_templ = utils.create_template()
+        #rot_templ = utils.create_template(length=9, width=6)
 
         all_match = utils.rotational_matching(image, rot_templ)
         all_match = all_match[1::]
