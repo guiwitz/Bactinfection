@@ -9,7 +9,7 @@ import os
 from pathlib import Path
 import ipywidgets as ipw
 import pickle
-from IPython.display import clear_output
+from IPython.display import display, clear_output
 
 from .annotateml import Annotate
 from .segmentation import Bact
@@ -61,15 +61,23 @@ class Gui(Bact):
         )
         self.minsize_field.observe(self.update_minsize, names="value")
 
+        self.cellpose_diam_field = ipw.IntText(
+            description="Average nucleus diameter",
+            layout={"width": "200px"},
+            style={"description_width": "initial"},
+            value=60,
+        )
+        self.cellpose_diam_field.observe(self.update_cellpose_diam, names="value")
+
         self.fillholes_checks = ipw.Checkbox(description="Fill holes", value=False)
         self.fillholes_checks.observe(self.update_fillholes, names="value")
 
-        self.use_ml_check = ipw.Checkbox(description="Use ML for nuclei")
-        self.use_ml_check.observe(self.update_useml, names="value")
-
-        self.use_cellpose_check = ipw.Checkbox(description="Use cellpose for nuclei")
-        self.use_cellpose_check.observe(self.update_cellpose, names="value")
         self.model = None
+
+        # Selection of nuclei segmentation mode
+        self.seg_type = ipw.Select(options = ['Custom', 'Manual ML','Cellpose'])
+        self.out_seg = ipw.Output()
+        self.seg_type.observe(self.seg_type_params, names = 'value')
 
         self.nucl_channel_seg = ipw.Select(
             options=self.channel_field.value.replace(" ", "").split(","),
@@ -174,10 +182,23 @@ class Gui(Bact):
         self.all_files = [
             os.path.split(x)[1] for x in self.folders.cur_dir.glob("*.oir")
         ]
+        self.all_files += [
+            os.path.split(x)[1] for x in self.folders.cur_dir.glob("*.oib")
+        ]
+
         if len(self.all_files) > 0:
             self.current_file = os.path.split(self.all_files[0])[1]
 
         self.folder_name = self.folders.cur_dir.as_posix()
+
+        #rename files that don't end as an index filename_XXXXX.oir
+        for ind, f in enumerate(self.all_files):
+            if os.path.splitext(f)[1] == '.oir' and not f[-5].isdigit():
+                source = os.path.join(self.folder_name,f)
+                destination = os.path.join(self.folder_name,f[0:-4]+'_0000.oir')
+                os.rename(src = source,dst = destination)
+                self.all_files[ind] = f[0:-4]+'_0000.oir'
+                
         self.initialize_output()
 
     def update_values(self, change):
@@ -191,6 +212,30 @@ class Gui(Bact):
         self.nucl_channel_seg.value = None
         self.bact_channel_seg.value = None
         self.cell_channel_seg.value = None
+
+    def seg_type_params(self,change):
+
+        if change['new'] == 'Custom':
+            self.use_ml = False
+            self.use_cellpose = False
+            with self.out_seg:
+                clear_output()
+                #display(ipw.Checkbox(description = 'description'))
+        elif change['new'] == 'Manual ML':
+            self.use_ml = True
+            self.use_cellpose = False
+            with self.out_seg:
+                clear_output()
+                display(ipw.VBox([self.load_otherML_button,self.MLfolder.file_list]))
+                #display(ipw.Checkbox(description = 'description'))
+        elif change['new'] == 'Cellpose':
+            self.use_cellpose = True
+            self.use_ml = False
+            with self.out_seg:
+                clear_output()
+                display(self.cellpose_diam_field)
+            if self.model is None:
+                self.import_cellpose_model()
 
     def update_nucl_channel(self, change):
 
@@ -208,19 +253,13 @@ class Gui(Bact):
 
         self.minsize = change["new"]
 
+    def update_cellpose_diam(self, change):
+
+        self.cellpose_diam = change["new"]
+
     def update_fillholes(self, change):
 
         self.fillholes = change["new"]
-
-    def update_useml(self, change):
-
-        self.use_ml = change["new"]
-
-    def update_cellpose(self, change):
-
-        self.use_cellpose = change["new"]
-        if self.use_cellpose is True and self.model is None:
-            self.import_cellpose_model()
 
     def load_existing(self, b):
 
