@@ -94,10 +94,11 @@ def segment_nuclei(image, radius=15):
     return mask_label
 
 
-def segment_nuclei_cellpose(image, model):
+def segment_nuclei_cellpose(image, model, diameter):
 
-    masks, flows, styles, diams = model.eval([image[::4, ::4]], channels=[[0,]])
-    mask = skimage.transform.resize(masks[0], image.shape, preserve_range=True, order=0)
+    masks, flows, styles, diams = model.eval([image[::1, ::1]], channels=[[0,]], diameter = diameter)
+    #mask = skimage.transform.resize(masks[0], image.shape, preserve_range=True, order=0)
+    mask = masks[0]
 
     return mask
 
