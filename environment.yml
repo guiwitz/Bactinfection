@@ -16,6 +16,7 @@ dependencies:
   - voila
   - nodejs
   - pip
+  - openjdk=8
   - pip:
     - mxnet-mkl
     - opencv_python
