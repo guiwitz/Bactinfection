@@ -1,4 +1,4 @@
-name: bactinfection
+name: bact_cellpose
 channels:
   - conda-forge
 dependencies:
@@ -26,7 +26,7 @@ dependencies:
     - oiffile
     - napari
     - scikit-learn
-    - git+https://github.com/guiwitz/bactinfection.git@master#egg=bactinfection
+    - git+https://github.com/guiwitz/bactinfection.git@cellpose#egg=bactinfection
     - cellpose
 #jupyter labextension install @jupyter-widgets/jupyterlab-manager
 #jupyter labextension install @jupyter-voila/jupyterlab-preview
