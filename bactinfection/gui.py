@@ -46,7 +46,7 @@ class Gui(Bact):
         self.folders.file_list.observe(self.get_filenames, names="options")
 
         self.outcheck = ipw.Output()
-
+        
         self.channel_field = ipw.Text(
             description="Channels",
             layout={"width": "700px"},
@@ -198,7 +198,7 @@ class Gui(Bact):
                 destination = os.path.join(self.folder_name,f[0:-4]+'_0000.oir')
                 os.rename(src = source,dst = destination)
                 self.all_files[ind] = f[0:-4]+'_0000.oir'
-                
+
         self.initialize_output()
 
     def update_values(self, change):

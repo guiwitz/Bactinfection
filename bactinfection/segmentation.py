@@ -12,6 +12,7 @@ import pandas as pd
 import skimage
 import skimage.measure
 import skimage.morphology
+from skimage.feature import match_template
 import napari
 import pickle
 
@@ -30,10 +31,11 @@ class Bact:
         all_files=None,
         folder_name=None,
         corr_threshold=0.5,
-        min_corr_vol=5,
+        min_corr_vol=3,
         use_ml=False,
         use_cellpose=False,
         model=None,
+        saveto='Segmented'
     ):
 
         """Standard __init__ method.
@@ -56,6 +58,8 @@ class Bact:
             use cellpose for nucleus segmentation
         model : cellpose model
             cellpose model
+        saveto : str
+            folder name wehre to save the segmentation
         
         
         Attributes
@@ -78,6 +82,7 @@ class Bact:
         self.use_ml = use_ml
         self.use_cellpose = use_cellpose
         self.model = model
+        self.saveto = saveto
 
         self.current_image = None
         self.current_image_med = None
@@ -205,8 +210,12 @@ class Bact:
         # plt.show()
         # plt.imshow(self.nuclei_segmentation[self.current_file], cmap = 'gray')
         # plt.show()
+        
 
     def segment_bacteria(self, channel):
+
+        rot_templ = -np.ones((5,5))
+        rot_templ[:,1:-1] = 1
 
         n_std = 20
         # recover nuclei and cell mask
@@ -225,17 +234,22 @@ class Bact:
         intensity_th = out[0][1] + n_std * np.abs(out[0][2])
         intensity_mask = image > intensity_th
 
-        # do rotational template matching
-        rot_templ = utils.create_template()
-        #rot_templ = utils.create_template(length=9, width=6)
+        # rotate image over a series of angles and do template matching
+        # this has the advantage that the template is always the same and 
+        # corresponds to the true mode i.e. bright band with dark borders
+        rot_im = []
+        for ind, alpha in enumerate(np.arange(0, 180, 18)):
+            im_rot = skimage.transform.rotate(image, alpha,preserve_range=True)
+            im_match = match_template(im_rot, rot_templ, pad_input=True)
+            im_unrot = skimage.transform.rotate(im_match, -alpha,preserve_range=True)
+            rot_im.append(im_unrot)
+        all_match = np.stack(rot_im,axis = 0)
 
-        all_match = utils.rotational_matching(image, rot_templ)
-        all_match = all_match[1::]
-        all_match = all_match * (1 - nucl_mask) * cell_mask * intensity_mask
+        # keep only regions matching well in the rotational match volume
         rotation_vol = all_match > self.corr_threshold
-
+        # label remaining regions
         rotation_vol_label = skimage.measure.label(rotation_vol)
-
+        # merge regions corresponding to angles around 0 and 180 (periodic bounaries)
         for x in range(rotation_vol_label.shape[1]):
             for y in range(rotation_vol_label.shape[2]):
                 if rotation_vol_label[0, x, y] > 0 and rotation_vol_label[-1, x, y] > 0:
@@ -243,12 +257,14 @@ class Bact:
                         rotation_vol_label == rotation_vol_label[-1, x, y]
                     ] = rotation_vol_label[0, x, y]
 
+        # measure region properties
         rotation_vol_props = pd.DataFrame(
             skimage.measure.regionprops_table(
                 rotation_vol_label, properties=("label", "area", "centroid")
             )
         )
 
+        # keep only regions with a minimum number of matching voxels
         sel_labels = rotation_vol_props[
             rotation_vol_props.area > self.min_corr_vol
         ].label.values
@@ -259,8 +275,11 @@ class Bact:
             ]
         )
 
+        # relabel and project. In the projection we assume there are no
+        # overlapping regions
         new_label_image = indices[rotation_vol_label]
         new_label_image_proj = np.max(new_label_image, axis=0)
+        new_label_image_proj = new_label_image_proj * cell_mask * intensity_mask
         self.bacteria_segmentation[self.current_file] = new_label_image_proj
 
         self.all_match = all_match
@@ -432,11 +451,23 @@ class Bact:
     def create_key_bindings(self):
 
         self.viewer.bind_key("w", self.move_forward_callback)
+        self.viewer.bind_key("b", self.move_backward_callback)
 
     def move_forward_callback(self, viewer):
 
         current_file_index = self.all_files.index(self.current_file)
         current_file_index = (current_file_index + 1) % len(self.all_files)
+        self.load_new_view(current_file_index)
+
+    def move_backward_callback(self, viewer):
+
+        current_file_index = self.all_files.index(self.current_file)
+        current_file_index = current_file_index - 1
+        if current_file_index<0:
+            current_file_index = len(self.all_files)
+        self.load_new_view(current_file_index)
+
+    def load_new_view(self, current_file_index):
 
         # local_file = os.path.split(self.all_files[current_file_index])[1]
         local_file = self.all_files[current_file_index]
