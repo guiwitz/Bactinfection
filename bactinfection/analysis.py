@@ -72,6 +72,9 @@ class Analysis(Bact):
         self.folders = Folders()
         self.folders.file_list.observe(self.get_filenames, names="options")
 
+        self.saveto_widget = ipw.Text(value='Segmented')
+        self.saveto_widget.observe(self.update_saveto, names="value")
+
         self.out = ipw.Output()
         self.out_plot = ipw.Output()
         self.out_plot2 = ipw.Output()
@@ -147,6 +150,10 @@ class Analysis(Bact):
         with open(os.path.join(self.notebook_path, "settings.txt"), "w") as f:
             f.write(new_path)
 
+    def update_saveto(self, change):
+
+        self.saveto = change["new"]
+
     def get_filenames(self, change=None):
         """Initialize file list with oir files present in folder"""
 
@@ -155,6 +162,10 @@ class Analysis(Bact):
         self.all_files = [
             os.path.split(x)[1] for x in self.folders.cur_dir.glob("*.oir")
         ]
+        self.all_files += [
+            os.path.split(x)[1] for x in self.folders.cur_dir.glob("*.oib")
+        ]
+
         if len(self.all_files) > 0:
             self.current_file = os.path.split(self.all_files[0])[1]
 

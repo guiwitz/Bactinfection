@@ -45,8 +45,11 @@ class Gui(Bact):
         self.folders = Folders()
         self.folders.file_list.observe(self.get_filenames, names="options")
 
+        self.saveto_widget = ipw.Text(value='Segmented')
+        self.saveto_widget.observe(self.update_saveto, names="value")
+
         self.outcheck = ipw.Output()
-        
+
         self.channel_field = ipw.Text(
             description="Channels",
             layout={"width": "700px"},
@@ -260,6 +263,10 @@ class Gui(Bact):
     def update_fillholes(self, change):
 
         self.fillholes = change["new"]
+
+    def update_saveto(self, change):
+
+        self.saveto = change["new"]
 
     def load_existing(self, b):
 

@@ -370,14 +370,11 @@ class Bact:
             print("No folder_name specified")
             return None
 
-        if not os.path.isdir(self.folder_name + "/Segmented/"):
-            os.makedirs(self.folder_name + "/Segmented/", exist_ok=True)
-        file_to_save = (
-            self.folder_name
-            + "/Segmented/"
-            + os.path.split(self.folder_name)[-1]
-            + ".pkl"
-        )
+        if not os.path.isdir(os.path.join(self.folder_name, self.saveto)):
+            os.makedirs(os.path.join(self.folder_name, self.saveto), exist_ok=True)
+
+        file_to_save = os.path.join(self.folder_name, self.saveto, os.path.split(self.folder_name)[-1]+'.pkl')
+
         with open(file_to_save, "wb") as f:
             to_export = {
                 "bact_channel": self.bact_channel,
@@ -400,12 +397,8 @@ class Bact:
 
     def load_segmentation(self, b=None):
 
-        file_to_load = (
-            self.folder_name
-            + "/Segmented/"
-            + os.path.split(self.folder_name)[-1]
-            + ".pkl"
-        )
+        file_to_load = os.path.join(self.folder_name, self.saveto, os.path.split(self.folder_name)[-1]+'.pkl')
+        
         if not os.path.isfile(file_to_load):
             print("No analysis found")
         else:
@@ -418,12 +411,10 @@ class Bact:
             print("Loading Done")
 
     def show_segmentation(self, local_file):
-        filepath = self.folder_name + "/" + local_file
+        filepath = os.path.join(self.folder_name, local_file)
         if self.bacteria_segmentation[local_file] is None:
             print("not yet segmented")
 
-        # else:
-        # if local_file != self.current_file:
         self.import_file(filepath)
 
         viewer = napari.Viewer(ndisplay=2)
@@ -476,7 +467,7 @@ class Bact:
             print("not yet segmented")
 
         else:
-            self.import_file(self.folder_name + "/" + local_file)
+            self.import_file(os.path.join(self.folder_name, local_file))
             for ind, c in enumerate(self.channels):
                 if c is not None:
                     layer_index = [
