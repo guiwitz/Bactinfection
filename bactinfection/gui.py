@@ -6,6 +6,7 @@ Class implementing an interactive ipywidgets gui for segmentation
 # License: BSD3
 
 import os
+import re
 from pathlib import Path
 import ipywidgets as ipw
 import pickle
@@ -71,6 +72,19 @@ class Gui(Bact):
             value=60,
         )
         self.cellpose_diam_field.observe(self.update_cellpose_diam, names="value")
+
+        self.zoom_field = ipw.IntText(
+            description="zoom to analyze",
+            layout={"width": "200px"},
+            style={"description_width": "initial"},
+            value=None,
+        )
+        self.zoom_field.observe(self.update_zoom, names="value")
+        self.zoom_field.observe(self.get_filenames, names = 'value')
+
+        self.zoom_on_off = ipw.Checkbox(description = 'Select zoom', value = False)
+        self.out_zoom = ipw.Output()
+        self.zoom_on_off.observe(self.zoom_params, names = 'value')
 
         self.fillholes_checks = ipw.Checkbox(description="Fill holes", value=False)
         self.fillholes_checks.observe(self.update_fillholes, names="value")
@@ -188,9 +202,15 @@ class Gui(Bact):
         self.all_files += [
             os.path.split(x)[1] for x in self.folders.cur_dir.glob("*.oib")
         ]
-
+            
         if len(self.all_files) > 0:
             self.current_file = os.path.split(self.all_files[0])[1]
+            # keep only specific zoom
+            if self.zoom > 0:
+                zoom_regexp = [[x, re.findall("\_(\d+)x.{0,1}?\_", x)] for x in self.all_files]
+                zoom_regexp = [[x[0],x[1][0]] for x in zoom_regexp if len(x[1])>0]
+                self.all_files = [x[0] for x in zoom_regexp if x[1] == str(self.zoom)]
+
 
         self.folder_name = self.folders.cur_dir.as_posix()
 
@@ -252,6 +272,21 @@ class Gui(Bact):
 
         self.cell_channel = change["new"]
 
+    def zoom_params(self, change):
+        if change['new'] == True:
+            with self.out_zoom:
+                clear_output()
+                display(self.zoom_field)
+
+        elif change['new'] == False:
+            with self.out_zoom:
+                clear_output()
+                self.zoom_field.value = 0
+
+    def update_zoom(self, change):
+
+        self.zoom = change["new"]
+
     def update_minsize(self, change):
 
         self.minsize = change["new"]
@@ -277,7 +312,7 @@ class Gui(Bact):
             temp_nucl = self.nucl_channel
             temp_bact = self.bact_channel
             temp_cell = self.cell_channel
-            print(self.nucl_channel)
+            #print(self.nucl_channel)
 
             self.channel_field.value = ", ".join(self.channels)
             self.nucl_channel_seg.value = temp_nucl
@@ -285,7 +320,8 @@ class Gui(Bact):
             self.cell_channel_seg.value = temp_cell
             self.minsize_field.value = self.minsize
             self.fillholes_checks.value = self.fillholes
-            print(self.nucl_channel)
+            self.cellpose_diam_field.value = self.cellpose_diam
+            #print(self.nucl_channel)
 
     def load_otherML(self, b):
         with self.out:
