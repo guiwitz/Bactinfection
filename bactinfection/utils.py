@@ -163,6 +163,68 @@ def remove_small(image, minsize):
 
     return mask
 
+def select_labels(im_label, im_properties = None, limit_dict={'label':0}):
+    '''Given a labelled image and pairs of properties/thresholds, keep only lables
+    of regions with properties above thresholds'''
+
+    if im_properties is None:
+        im_properties = pd.DataFrame(skimage.measure.regionprops_table(im_label,properties=['label']+list(limit_dict.keys())))
+    # create boolean pandas mask with constrains 
+    select_lab = im_properties.label>0
+    for k in limit_dict:
+        select_lab = select_lab & (im_properties[k] > limit_dict[k])
+    sel_labels = im_properties[select_lab].label.values
+     
+    # create index array to subselect labels
+    indices = np.array(
+    [
+        i if i in sel_labels else 0
+        for i in np.arange(im_properties.label.max() + 1)
+    ])
+    
+    clean_labels = indices[im_label]
+    return clean_labels
+
+def volume_periodic_labelling(rotation_vol):
+    '''Given a binary volume create a labelled volume with periodic boundary conditions
+    along the first dimension'''
+
+    original_size = rotation_vol.shape
+
+    # repeat the volume to connect 0deg and 180deg matching
+    rotation_vol = np.concatenate((rotation_vol,rotation_vol),axis = 0)
+
+    # label volume
+    rotation_vol_label = skimage.measure.label(rotation_vol)
+
+    # extract labels at the interface of the two assembled volumes
+    new_labels = np.unique(rotation_vol_label[original_size[0],:,:])
+
+    # extract the labels at the same position as the new_labels but in the first layer
+    old_labels_to_remove = rotation_vol_label[0,:,:][rotation_vol_label[original_size[0],:,:]>0]
+
+    # construct index list of labels to keep for replacement in the assembled volume
+    indices = np.array(
+        [
+            i if i in new_labels else 0
+            for i in np.arange(rotation_vol_label.max() + 1)
+        ])
+
+    # construct index list of labels to keep in the original volume
+    indices2 = np.array(
+        [
+            i if i not in old_labels_to_remove else 0
+            for i in np.arange(rotation_vol_label.max() + 1)
+        ])
+
+    # recover labelled regions in the two labelled volumes and assemble them
+    keep_overlapping = indices[rotation_vol_label]
+    keep_old = indices2[rotation_vol_label]
+    total_vol = keep_old[0:original_size[0],:,:] + keep_overlapping[original_size[0]::,:,:]
+
+    return total_vol
+
+
 
 """def detect_spots(image, sigmaXY, sigmaZ):
     
@@ -194,21 +256,21 @@ def remove_small(image, minsize):
     return spot_prop"""
 
 
-def fit_gaussian_hist(data, plotting=True):
+def fit_gaussian_hist(data, plotting=True, minbin = 0, maxbin = 4000, binwidth = 30):
 
     fitfunc = lambda p, x: p[0] * np.exp(-0.5 * ((x - p[1]) / p[2]) ** 2)
     errfunc = lambda p, x, y: (y - fitfunc(p, x))
 
-    ydata, xdata = np.histogram(data, bins=np.arange(0, 4000, 30))
+    ydata, xdata = np.histogram(data, bins=np.arange(minbin, maxbin, binwidth))
     xdata = [0.5 * (xdata[x] + xdata[x + 1]) for x in range(len(xdata) - 1)]
-    init = [np.max(ydata), np.mean(data), np.std(data)]
+    init = [np.max(ydata), xdata[np.argmax(ydata)], np.std(data)]
 
     out = leastsq(errfunc, init, args=(xdata, ydata))
 
     fig = []
     if plotting == True:
         fig, ax = plt.subplots()
-        plt.bar(x=xdata, height=ydata, width=30, color="r")
+        plt.bar(x=xdata, height=ydata, width=binwidth, color="r")
         plt.plot(xdata, fitfunc(out[0], xdata))
         plt.plot(
             [out[0][1] + 3 * np.abs(out[0][2]), out[0][1] + 3 * np.abs(out[0][2])],
