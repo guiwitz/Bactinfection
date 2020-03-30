@@ -46,7 +46,7 @@ class Gui(Bact):
         self.folders = Folders()
         self.folders.file_list.observe(self.get_filenames, names="options")
 
-        self.saveto_widget = ipw.Text(value='Segmented')
+        self.saveto_widget = ipw.Text(value="Segmented")
         self.saveto_widget.observe(self.update_saveto, names="value")
 
         self.outcheck = ipw.Output()
@@ -80,11 +80,11 @@ class Gui(Bact):
             value=None,
         )
         self.zoom_field.observe(self.update_zoom, names="value")
-        self.zoom_field.observe(self.get_filenames, names = 'value')
+        self.zoom_field.observe(self.get_filenames, names="value")
 
-        self.zoom_on_off = ipw.Checkbox(description = 'Select zoom', value = False)
+        self.zoom_on_off = ipw.Checkbox(description="Select zoom", value=False)
         self.out_zoom = ipw.Output()
-        self.zoom_on_off.observe(self.zoom_params, names = 'value')
+        self.zoom_on_off.observe(self.zoom_params, names="value")
 
         self.fillholes_checks = ipw.Checkbox(description="Fill holes", value=False)
         self.fillholes_checks.observe(self.update_fillholes, names="value")
@@ -92,9 +92,9 @@ class Gui(Bact):
         self.model = None
 
         # Selection of nuclei segmentation mode
-        self.seg_type = ipw.Select(options = ['Custom', 'Manual ML','Cellpose'])
+        self.seg_type = ipw.Select(options=["Custom", "Manual ML", "Cellpose"])
         self.out_seg = ipw.Output()
-        self.seg_type.observe(self.seg_type_params, names = 'value')
+        self.seg_type.observe(self.seg_type_params, names="value")
 
         self.nucl_channel_seg = ipw.Select(
             options=self.channel_field.value.replace(" ", "").split(","),
@@ -202,25 +202,26 @@ class Gui(Bact):
         self.all_files += [
             os.path.split(x)[1] for x in self.folders.cur_dir.glob("*.oib")
         ]
-            
+
         if len(self.all_files) > 0:
             self.current_file = os.path.split(self.all_files[0])[1]
             # keep only specific zoom
             if self.zoom > 0:
-                zoom_regexp = [[x, re.findall("\_(\d+)x.{0,1}?\_", x)] for x in self.all_files]
-                zoom_regexp = [[x[0],x[1][0]] for x in zoom_regexp if len(x[1])>0]
+                zoom_regexp = [
+                    [x, re.findall("\_(\d+)x.{0,1}?\_", x)] for x in self.all_files
+                ]
+                zoom_regexp = [[x[0], x[1][0]] for x in zoom_regexp if len(x[1]) > 0]
                 self.all_files = [x[0] for x in zoom_regexp if x[1] == str(self.zoom)]
-
 
         self.folder_name = self.folders.cur_dir.as_posix()
 
-        #rename files that don't end as an index filename_XXXXX.oir
+        # rename files that don't end as an index filename_XXXXX.oir
         for ind, f in enumerate(self.all_files):
-            if os.path.splitext(f)[1] == '.oir' and not f[-5].isdigit():
-                source = os.path.join(self.folder_name,f)
-                destination = os.path.join(self.folder_name,f[0:-4]+'_0000.oir')
-                os.rename(src = source,dst = destination)
-                self.all_files[ind] = f[0:-4]+'_0000.oir'
+            if os.path.splitext(f)[1] == ".oir" and not f[-5].isdigit():
+                source = os.path.join(self.folder_name, f)
+                destination = os.path.join(self.folder_name, f[0:-4] + "_0000.oir")
+                os.rename(src=source, dst=destination)
+                self.all_files[ind] = f[0:-4] + "_0000.oir"
 
         self.initialize_output()
 
@@ -236,22 +237,22 @@ class Gui(Bact):
         self.bact_channel_seg.value = None
         self.cell_channel_seg.value = None
 
-    def seg_type_params(self,change):
+    def seg_type_params(self, change):
 
-        if change['new'] == 'Custom':
+        if change["new"] == "Custom":
             self.use_ml = False
             self.use_cellpose = False
             with self.out_seg:
                 clear_output()
-                #display(ipw.Checkbox(description = 'description'))
-        elif change['new'] == 'Manual ML':
+                # display(ipw.Checkbox(description = 'description'))
+        elif change["new"] == "Manual ML":
             self.use_ml = True
             self.use_cellpose = False
             with self.out_seg:
                 clear_output()
-                display(ipw.VBox([self.load_otherML_button,self.MLfolder.file_list]))
-                #display(ipw.Checkbox(description = 'description'))
-        elif change['new'] == 'Cellpose':
+                display(ipw.VBox([self.load_otherML_button, self.MLfolder.file_list]))
+                # display(ipw.Checkbox(description = 'description'))
+        elif change["new"] == "Cellpose":
             self.use_cellpose = True
             self.use_ml = False
             with self.out_seg:
@@ -273,12 +274,12 @@ class Gui(Bact):
         self.cell_channel = change["new"]
 
     def zoom_params(self, change):
-        if change['new'] == True:
+        if change["new"] == True:
             with self.out_zoom:
                 clear_output()
                 display(self.zoom_field)
 
-        elif change['new'] == False:
+        elif change["new"] == False:
             with self.out_zoom:
                 clear_output()
                 self.zoom_field.value = 0
@@ -312,7 +313,7 @@ class Gui(Bact):
             temp_nucl = self.nucl_channel
             temp_bact = self.bact_channel
             temp_cell = self.cell_channel
-            #print(self.nucl_channel)
+            # print(self.nucl_channel)
 
             self.channel_field.value = ", ".join(self.channels)
             self.nucl_channel_seg.value = temp_nucl
@@ -321,7 +322,7 @@ class Gui(Bact):
             self.minsize_field.value = self.minsize
             self.fillholes_checks.value = self.fillholes
             self.cellpose_diam_field.value = self.cellpose_diam
-            #print(self.nucl_channel)
+            # print(self.nucl_channel)
 
     def load_otherML(self, b):
         with self.out:
@@ -343,14 +344,12 @@ class Gui(Bact):
     def run_interactive_analysis(self, b):
 
         with self.out:
-            print("here")
             clear_output()
             totfiles = len(self.all_files)
             if totfiles == 0:
                 print("Load folder first")
                 self.analyze_button.description = "Run segmentation"
             else:
-                print("here")
                 self.import_file(self.folder_name + "/" + self.all_files[0])
                 if len(self.channels) > self.current_image.shape[2]:
                     print("Too many channels defined")
@@ -390,4 +389,3 @@ class Gui(Bact):
             clear_output()
             self.save_segmentation()
             print("Segmentation saved")
-

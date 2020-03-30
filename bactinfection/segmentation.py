@@ -35,7 +35,7 @@ class Bact:
         use_ml=False,
         use_cellpose=False,
         model=None,
-        saveto='Segmented'
+        saveto="Segmented",
     ):
 
         """Standard __init__ method.
@@ -164,7 +164,7 @@ class Bact:
         ch = self.channels.index(channel)
 
         nucle_seg = utils.segment_nuclei(self.current_image[:, :, ch], radius=0)
-        #nucl_mask = nucle_seg > 0
+        # nucl_mask = nucle_seg > 0
 
         self.nuclei_segmentation[self.current_file] = nucle_seg
 
@@ -178,7 +178,7 @@ class Bact:
             nucle_seg = utils.segment_nuclei_cellpose(
                 self.current_image[:, :, ch], self.model, self.cellpose_diam
             )
-            #nucl_mask = nucle_seg > 0
+            # nucl_mask = nucle_seg > 0
 
             self.nuclei_segmentation[self.current_file] = nucle_seg
 
@@ -211,16 +211,15 @@ class Bact:
         # plt.show()
         # plt.imshow(self.nuclei_segmentation[self.current_file], cmap = 'gray')
         # plt.show()
-        
 
     def segment_bacteria(self, channel):
 
-        rot_templ = -np.ones((5,5))
-        rot_templ[:,1:-1] = 1
+        rot_templ = -np.ones((5, 5))
+        rot_templ[:, 1:-1] = 1
 
         n_std = 20
         # recover nuclei and cell mask
-        nucl_mask = self.nuclei_segmentation[self.current_file]>0
+        nucl_mask = self.nuclei_segmentation[self.current_file] > 0
         cell_mask = self.cell_segmentation[self.current_file]
 
         # remove bright nuclei regions
@@ -236,27 +235,27 @@ class Bact:
         intensity_th = out[0][1] + n_std * np.abs(out[0][2])
 
         # rotate image over a series of angles and do template matching
-        # this has the advantage that the template is always the same and 
+        # this has the advantage that the template is always the same and
         # corresponds to the true mode i.e. bright band with dark borders
         rot_im = []
-        to_pad = int(0.5*image.shape[0]*(2**0.5-1))
+        to_pad = int(0.5 * image.shape[0] * (2 ** 0.5 - 1))
         im_pad = np.pad(image, to_pad)
         for alpha in np.arange(0, 180, 18):
-            im_rot = skimage.transform.rotate(im_pad, alpha,preserve_range=True)
+            im_rot = skimage.transform.rotate(im_pad, alpha, preserve_range=True)
             im_match = match_template(im_rot, rot_templ, pad_input=True)
-            im_unrot = skimage.transform.rotate(im_match, -alpha,preserve_range=True)
-            rot_im.append(im_unrot[to_pad:-to_pad,to_pad:-to_pad])
-        all_match = np.stack(rot_im,axis = 0)
+            im_unrot = skimage.transform.rotate(im_match, -alpha, preserve_range=True)
+            rot_im.append(im_unrot[to_pad:-to_pad, to_pad:-to_pad])
+        all_match = np.stack(rot_im, axis=0)
 
         # keep only regions matching well in the rotational match volume
         rotation_vol = all_match > self.corr_threshold
 
         # create negative mask to remove regions clearly between bacteria
-        neg_mask = np.max(-all_match, axis = 0)
+        neg_mask = np.max(-all_match, axis=0)
         neg_mask = neg_mask < 0.3
         rotation_vol = rotation_vol * neg_mask
-        
-        '''abandonned because slow
+
+        """abandonned because slow
         # label remaining regions
         rotation_vol_label = skimage.measure.label(rotation_vol)
         # merge regions corresponding to angles around 0 and 180 (periodic bounaries)
@@ -266,27 +265,32 @@ class Bact:
                     rotation_vol_label[
                         rotation_vol_label == rotation_vol_label[-1, x, y]
                     ] = rotation_vol_label[0, x, y]
-        '''
+        """
         # create volume labelled with periodic boundary conditions in z
         rotation_vol_label = utils.volume_periodic_labelling(rotation_vol)
 
         # measure region properties
         rotation_vol_props = pd.DataFrame(
             skimage.measure.regionprops_table(
-                rotation_vol_label, image*np.ones(rotation_vol_label.shape), 
-                properties=("label", "area", "mean_intensity")
+                rotation_vol_label,
+                image * np.ones(rotation_vol_label.shape),
+                properties=("label", "area", "mean_intensity"),
             )
         )
 
         # keep only regions with a minimum number of matching voxels
-        new_label_image = utils.select_labels(rotation_vol_label, rotation_vol_props, {'area':self.min_corr_vol, 'mean_intensity':intensity_th})
+        new_label_image = utils.select_labels(
+            rotation_vol_label,
+            rotation_vol_props,
+            {"area": self.min_corr_vol, "mean_intensity": intensity_th},
+        )
 
         # relabel and project. In the projection we assume there are no
         # overlapping regions
         new_label_image_proj = np.max(new_label_image, axis=0)
-        new_label_image_proj = new_label_image_proj * cell_mask# * intensity_mask
+        new_label_image_proj = new_label_image_proj * cell_mask  # * intensity_mask
 
-        remove_small = utils.select_labels(new_label_image_proj, limit_dict={'area': 2})
+        remove_small = utils.select_labels(new_label_image_proj, limit_dict={"area": 2})
 
         self.bacteria_segmentation[self.current_file] = remove_small
 
@@ -381,7 +385,9 @@ class Bact:
         if not os.path.isdir(os.path.join(self.folder_name, self.saveto)):
             os.makedirs(os.path.join(self.folder_name, self.saveto), exist_ok=True)
 
-        file_to_save = os.path.join(self.folder_name, self.saveto, os.path.split(self.folder_name)[-1]+'.pkl')
+        file_to_save = os.path.join(
+            self.folder_name, self.saveto, os.path.split(self.folder_name)[-1] + ".pkl"
+        )
 
         with open(file_to_save, "wb") as f:
             to_export = {
@@ -400,14 +406,16 @@ class Bact:
                 "all_files": self.all_files,
                 "ml": self.ml,
                 "result": self.result,
-                "cellpose_diam": self.cellpose_diam
+                "cellpose_diam": self.cellpose_diam,
             }
             pickle.dump(to_export, f)
 
     def load_segmentation(self, b=None):
 
-        file_to_load = os.path.join(self.folder_name, self.saveto, os.path.split(self.folder_name)[-1]+'.pkl')
-        
+        file_to_load = os.path.join(
+            self.folder_name, self.saveto, os.path.split(self.folder_name)[-1] + ".pkl"
+        )
+
         if not os.path.isfile(file_to_load):
             print("No analysis found")
         else:
@@ -438,8 +446,7 @@ class Bact:
                 name="bactseg",
             )
             viewer.add_labels(
-                self.nuclei_segmentation[local_file],
-                name="nucleiseg",
+                self.nuclei_segmentation[local_file], name="nucleiseg",
             )
             viewer.add_labels(
                 skimage.morphology.label(self.cell_segmentation[local_file]),
@@ -463,7 +470,7 @@ class Bact:
 
         current_file_index = self.all_files.index(self.current_file)
         current_file_index = current_file_index - 1
-        if current_file_index<0:
+        if current_file_index < 0:
             current_file_index = len(self.all_files)
         self.load_new_view(current_file_index)
 
@@ -491,8 +498,7 @@ class Bact:
             self.viewer.layers[-3].data = self.bacteria_segmentation[local_file]
 
             self.viewer.layers[-2].data = self.nuclei_segmentation[local_file]
-            
+
             self.viewer.layers[-1].data = skimage.morphology.label(
                 self.cell_segmentation[local_file]
             )
-
