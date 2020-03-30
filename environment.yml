@@ -29,5 +29,6 @@ dependencies:
     - scikit-learn
     - git+https://github.com/guiwitz/bactinfection.git@cellpose#egg=bactinfection
     - cellpose
+    - plotnine
 #jupyter labextension install @jupyter-widgets/jupyterlab-manager
 #jupyter labextension install @jupyter-voila/jupyterlab-preview
