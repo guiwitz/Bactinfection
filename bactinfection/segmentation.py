@@ -97,6 +97,7 @@ class Bact:
         self.minsize = 0
         self.fillholes = False
         self.cellpose_diam = 60
+        self.zoom = 0
 
     def initialize_output(self):
 
@@ -112,7 +113,7 @@ class Bact:
     def import_file(self, filepath):
 
         if os.path.split(filepath)[0] == "":
-            filepath = self.folder_name + "/" + filepath
+            filepath = os.path.join(self.folder_name, filepath)
 
         self.current_file = os.path.split(filepath)[1]
         filetype = os.path.splitext(self.current_file)[1]
@@ -163,10 +164,9 @@ class Bact:
         ch = self.channels.index(channel)
 
         nucle_seg = utils.segment_nuclei(self.current_image[:, :, ch], radius=0)
-        nucl_mask = nucle_seg > 0
+        #nucl_mask = nucle_seg > 0
 
-        self.current_nucl_mask = nucl_mask
-        self.nuclei_segmentation[self.current_file] = nucl_mask
+        self.nuclei_segmentation[self.current_file] = nucle_seg
 
     def segment_nuclei_cellpose(self, channel):
 
@@ -178,10 +178,9 @@ class Bact:
             nucle_seg = utils.segment_nuclei_cellpose(
                 self.current_image[:, :, ch], self.model, self.cellpose_diam
             )
-            nucl_mask = nucle_seg > 0
+            #nucl_mask = nucle_seg > 0
 
-            self.current_nucl_mask = nucl_mask
-            self.nuclei_segmentation[self.current_file] = nucl_mask
+            self.nuclei_segmentation[self.current_file] = nucle_seg
 
     def segment_nucleiML(self, channel):
 
@@ -204,7 +203,9 @@ class Bact:
             predicted_image, image.shape, order=0, preserve_range=True
         )
 
-        self.nuclei_segmentation[self.current_file] = predicted_image_upscaled == 2
+        labeled_mask = predicted_image_upscaled == 2
+        labeled_mask = skimage.morphology.label(labeled_mask)
+        self.nuclei_segmentation[self.current_file] = labeled_mask
 
         # plt.imshow(image)
         # plt.show()
@@ -219,11 +220,12 @@ class Bact:
 
         n_std = 20
         # recover nuclei and cell mask
-        nucl_mask = self.nuclei_segmentation[self.current_file]
+        nucl_mask = self.nuclei_segmentation[self.current_file]>0
         cell_mask = self.cell_segmentation[self.current_file]
 
         # remove bright nuclei regions
         cell_mask = cell_mask & ~nucl_mask
+        cell_mask = cell_mask.astype(bool)
 
         # calculate median filter image
         self.calculate_median(channel)
@@ -232,21 +234,29 @@ class Bact:
         # calculate an intensity threshold by fitting a gaussian on background
         out, _ = utils.fit_gaussian_hist(image[cell_mask], plotting=False)
         intensity_th = out[0][1] + n_std * np.abs(out[0][2])
-        intensity_mask = image > intensity_th
 
         # rotate image over a series of angles and do template matching
         # this has the advantage that the template is always the same and 
         # corresponds to the true mode i.e. bright band with dark borders
         rot_im = []
-        for ind, alpha in enumerate(np.arange(0, 180, 18)):
-            im_rot = skimage.transform.rotate(image, alpha,preserve_range=True)
+        to_pad = int(0.5*image.shape[0]*(2**0.5-1))
+        im_pad = np.pad(image, to_pad)
+        for alpha in np.arange(0, 180, 18):
+            im_rot = skimage.transform.rotate(im_pad, alpha,preserve_range=True)
             im_match = match_template(im_rot, rot_templ, pad_input=True)
             im_unrot = skimage.transform.rotate(im_match, -alpha,preserve_range=True)
-            rot_im.append(im_unrot)
+            rot_im.append(im_unrot[to_pad:-to_pad,to_pad:-to_pad])
         all_match = np.stack(rot_im,axis = 0)
 
         # keep only regions matching well in the rotational match volume
         rotation_vol = all_match > self.corr_threshold
+
+        # create negative mask to remove regions clearly between bacteria
+        neg_mask = np.max(-all_match, axis = 0)
+        neg_mask = neg_mask < 0.3
+        rotation_vol = rotation_vol * neg_mask
+        
+        '''abandonned because slow
         # label remaining regions
         rotation_vol_label = skimage.measure.label(rotation_vol)
         # merge regions corresponding to angles around 0 and 180 (periodic bounaries)
@@ -256,31 +266,29 @@ class Bact:
                     rotation_vol_label[
                         rotation_vol_label == rotation_vol_label[-1, x, y]
                     ] = rotation_vol_label[0, x, y]
+        '''
+        # create volume labelled with periodic boundary conditions in z
+        rotation_vol_label = utils.volume_periodic_labelling(rotation_vol)
 
         # measure region properties
         rotation_vol_props = pd.DataFrame(
             skimage.measure.regionprops_table(
-                rotation_vol_label, properties=("label", "area", "centroid")
+                rotation_vol_label, image*np.ones(rotation_vol_label.shape), 
+                properties=("label", "area", "mean_intensity")
             )
         )
 
         # keep only regions with a minimum number of matching voxels
-        sel_labels = rotation_vol_props[
-            rotation_vol_props.area > self.min_corr_vol
-        ].label.values
-        indices = np.array(
-            [
-                i if i in sel_labels else 0
-                for i in np.arange(rotation_vol_props.label.max() + 1)
-            ]
-        )
+        new_label_image = utils.select_labels(rotation_vol_label, rotation_vol_props, {'area':self.min_corr_vol, 'mean_intensity':intensity_th})
 
         # relabel and project. In the projection we assume there are no
         # overlapping regions
-        new_label_image = indices[rotation_vol_label]
         new_label_image_proj = np.max(new_label_image, axis=0)
-        new_label_image_proj = new_label_image_proj * cell_mask * intensity_mask
-        self.bacteria_segmentation[self.current_file] = new_label_image_proj
+        new_label_image_proj = new_label_image_proj * cell_mask# * intensity_mask
+
+        remove_small = utils.select_labels(new_label_image_proj, limit_dict={'area': 2})
+
+        self.bacteria_segmentation[self.current_file] = remove_small
 
         self.all_match = all_match
         self.rotation_vol_label = rotation_vol_label
@@ -392,6 +400,7 @@ class Bact:
                 "all_files": self.all_files,
                 "ml": self.ml,
                 "result": self.result,
+                "cellpose_diam": self.cellpose_diam
             }
             pickle.dump(to_export, f)
 
@@ -429,7 +438,7 @@ class Bact:
                 name="bactseg",
             )
             viewer.add_labels(
-                skimage.morphology.label(self.nuclei_segmentation[local_file]),
+                self.nuclei_segmentation[local_file],
                 name="nucleiseg",
             )
             viewer.add_labels(
@@ -481,9 +490,8 @@ class Bact:
             #    self.bacteria_segmentation[local_file]
             self.viewer.layers[-3].data = self.bacteria_segmentation[local_file]
 
-            self.viewer.layers[-2].data = skimage.morphology.label(
-                self.nuclei_segmentation[local_file]
-            )
+            self.viewer.layers[-2].data = self.nuclei_segmentation[local_file]
+            
             self.viewer.layers[-1].data = skimage.morphology.label(
                 self.cell_segmentation[local_file]
             )
