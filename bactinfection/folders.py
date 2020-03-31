@@ -8,7 +8,6 @@ Class implementing a simple file browser for Jupyter
 
 import ipywidgets as ipw
 from pathlib import Path
-import time
 
 
 class Folders:
@@ -20,7 +19,8 @@ class Folders:
         self.cur_dir = Path(".").resolve()
         self.out = ipw.Output()
 
-        self.file_list = ipw.SelectMultiple(rows=rows, layout={"width": "500px"})
+        self.file_list = ipw.SelectMultiple(
+            rows=rows, layout={"width": "500px"})
         self.file_list.options = [".."] + self.get_files()
         self.file_list.value = ()
         self.file_list.observe(self.move_folders, names=["value"])
@@ -32,8 +32,10 @@ class Folders:
 
     def get_files(self):
 
-        current_files = [x.name for x in self.cur_dir.glob("*") if not x.is_dir()]
-        current_folders = [x.name for x in self.cur_dir.glob("*") if x.is_dir()]
+        current_files = [
+            x.name for x in self.cur_dir.glob("*") if not x.is_dir()]
+        current_folders = [
+            x.name for x in self.cur_dir.glob("*") if x.is_dir()]
         current_files = sorted(current_files, key=str.lower)
         current_folders = sorted(current_folders, key=str.lower)
 

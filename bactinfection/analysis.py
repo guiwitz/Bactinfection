@@ -2,9 +2,12 @@
 Class implementing analysis of segmentation data
 """
 
-# Author: Guillaume Witz, Science IT Support, Bern University, 2019
+# Author: Guillaume Witz, Science IT Support, Bern University, 2019-2020
 # License: BSD3
 
+from . import utils
+from .segmentation import Bact
+from .folders import Folders
 
 import os
 from pathlib import Path
@@ -13,7 +16,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import ipywidgets as ipw
-import pickle
 from sklearn import mixture
 import skimage.filters
 from IPython.display import display, clear_output
@@ -23,11 +25,6 @@ import plotnine as pn
 from plotnine import ggplot, geom_point, aes, geom_line, labels
 
 pn.theme_set(pn.theme_classic(base_size=18, base_family="Helvetica"))
-
-
-from . import utils
-from .segmentation import Bact
-from .folders import Folders
 
 
 font = {
@@ -42,14 +39,13 @@ class Analysis(Bact):
     def __init__(self):
 
         """Standard __init__ method.
-        
+
         Parameters
         ----------
-        
-        
+
         Attributes
         ----------
-            
+
         all_files : list
             list of files to process
         result: pandas dataframe
@@ -65,7 +61,6 @@ class Analysis(Bact):
         folders : Folders object
 
 
-        
         """
         Bact.__init__(self)
 
@@ -99,7 +94,7 @@ class Analysis(Bact):
         self.folders = Folders()
         self.folders.file_list.observe(self.get_filenames, names="options")
 
-        # option to name saving folder
+        # option to name saving/loading folder
         self.saveto_widget = ipw.Text(value="Segmented")
         self.saveto_widget.observe(self.update_saveto, names="value")
 
@@ -206,7 +201,7 @@ class Analysis(Bact):
         self.saveto = change["new"]
 
     def get_filenames(self, change=None):
-        """Initialize file list with oir files present in folder"""
+        """Initialize file list with oir/oib files present in folder"""
 
         self.all_files = [
             os.path.split(x)[1] for x in self.folders.cur_dir.glob("*.oir")
@@ -214,10 +209,6 @@ class Analysis(Bact):
         self.all_files += [
             os.path.split(x)[1] for x in self.folders.cur_dir.glob("*.oib")
         ]
-        """# keep only specific zoom
-        if self.zoom is not None:
-            self.all_files = [x for x in self.all_files if re.findall("\_(\d+)x.{0,1}?\_", x)[0] == str(self.zoom)]
-        """
 
         if len(self.all_files) > 0:
             self.current_file = os.path.split(self.all_files[0])[1]
@@ -227,7 +218,8 @@ class Analysis(Bact):
         self.clean_masks = {os.path.split(x)[1]: None for x in self.all_files}
 
     def load_infos(self, b=None):
-        """Load segmentation data"""
+        """Callback to Load segmentation data.
+        Called by load_button."""
 
         self.load_button.description = "Loading..."
 
@@ -242,7 +234,7 @@ class Analysis(Bact):
         self.load_button.description = "Load segmentation"
 
     def create_result(self):
-        """Collect measurements of all images into dataframe and 
+        """Collect measurements of all images into dataframe and
         count nuclei"""
 
         # calculate background values in all channels
@@ -333,8 +325,8 @@ class Analysis(Bact):
         return random_measurements
 
     def global_threshold(self):
-        """Collect all background pixels for each channel and fit a log normal around the 
-        main peack to estimate background mu and sigma"""
+        """Collect all background pixels for each channel and fit a log
+        normal around the main peack to estimate background mu and sigma"""
 
         self.threshold_global = []
         for x in range(len(self.channels)):
@@ -370,8 +362,8 @@ class Analysis(Bact):
         self.threshold_global = pd.DataFrame(self.threshold_global)
 
     def data_aggregation(self):
-        """Collect number of bacteria above background threshold and per nucleus for each 
-        image and calculate the average value"""
+        """Collect number of bacteria above background threshold and per
+        nucleus for each image and calculate the average value"""
 
         if self.threshold_global is None:
             self.global_threshold()
@@ -389,7 +381,8 @@ class Analysis(Bact):
         # group data by image and channel
         grouped = selected.groupby(["filename", "channel"])
 
-        # count elements in each group i.e. ON bacteria for each image in each channel
+        # count elements in each group i.e. ON bacteria for each image
+        # in each channel
         aggregated_counts = grouped.agg(
             numbers=pd.NamedAgg(column="mean_intensity", aggfunc="count")
         ).reset_index()
@@ -429,7 +422,8 @@ class Analysis(Bact):
         return colors
 
     def plot_time_curve(self, b=None):
-        """Plot time curve of number of bacteria/nuclei for each selected channel"""
+        """Callback to polot time curve of number of bacteria/nuclei for
+        each selected channel. Called by plot_time_curve_button."""
 
         if self.aggregated is None:
             self.data_aggregation()
@@ -469,8 +463,9 @@ class Analysis(Bact):
                 display(myfig)
 
     def plot_byhour_callback(self, b=None):
-        """Callback function to plot bacteria intensities histograms. Responds to 
-        selection changes in channels and hour"""
+        """Callback function to plot bacteria intensities histograms.
+        Called by button_plotbyhour and responds to selection changes 
+        in channels and hour."""
 
         self.out_plot.clear_output()
         with self.out_plot:
@@ -520,7 +515,6 @@ class Analysis(Bact):
                 limit = self.threshold_global[
                     self.threshold_global.channel == c
                 ].back_value.values[0]
-                # limit = agg_random.loc[hour,c].mean_intensity + 10*agg_random.loc[hour,c].std_intensity
                 ax.plot(
                     [limit, limit], [0, np.max(hist_val)], "green",
                 )
@@ -529,7 +523,8 @@ class Analysis(Bact):
             plt.show()
 
     def save_time_curve_plot(self, b=None):
-        """Save time-curve plot"""
+        """Callback to save time-curve plot.
+        Called by save_time_curve_plot_button."""
 
         file_to_save = os.path.join(
             self.folder_name,
@@ -542,7 +537,8 @@ class Analysis(Bact):
 
     def clean_mask(self, local_file):
         """Given global thresholds for all channels and bacteria detection masks,
-        create cleaned masks with only bacteria above threshold. Serves as visual check"""
+        create cleaned masks with only bacteria above threshold.
+        Serves as visual check."""
 
         filepath = os.path.join(self.folder_name, local_file)
 
@@ -597,6 +593,7 @@ class Analysis(Bact):
         GM = mixture.GaussianMixture(n_components=2)
         GM.fit(X)
         self.GM = GM
+
     """
     def save_analysis(self, b=None):
         if not os.path.isdir(self.folder_name + "/Analyzed/"):
@@ -642,7 +639,8 @@ class Analysis(Bact):
     """
 
     def show_interactive_masks(self, b):
-        """Call back to start interactive visualisation of cleaned masks"""
+        """Call back to start interactive visualisation of cleaned masks.
+        Called by show_analyzed_button."""
         with self.out:
             clear_output()
             self.show_clean_masks(self.all_files[0])
@@ -688,7 +686,8 @@ class Analysis(Bact):
         self.load_new_cleanmask(current_file_index)
 
     def load_new_cleanmask(self, current_file_index):
-        """replace current data in napari visualisation with data of new image"""
+        """Replace current data in napari visualisation with data
+        of new image. Called when moving forward/backward in files."""
 
         local_file = self.all_files[current_file_index]
         self.import_file(os.path.join(self.folder_name, local_file))
@@ -704,4 +703,3 @@ class Analysis(Bact):
                 self.viewer.layers[layer_index].name = self.current_file + "_" + c
 
                 self.viewer.layers["mask_" + c].data = self.clean_masks[local_file][c]
-

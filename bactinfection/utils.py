@@ -2,7 +2,7 @@
 Core functions for data import and analysis
 """
 
-# Author: Guillaume Witz, Science IT Support, Bern University, 2019
+# Author: Guillaume Witz, Science IT Support, Bern University, 2019-2020
 # License: BSD3
 
 import numpy as np
@@ -11,13 +11,11 @@ import re
 import matplotlib.pyplot as plt
 
 from scipy.optimize import leastsq
-import skimage.io as io
-from skimage.morphology import binary_closing, watershed, label, binary_opening, disk
+from skimage.morphology import label, binary_opening, disk
 from skimage.filters import threshold_li, gaussian
-from skimage.feature import match_template, peak_local_max
+from skimage.feature import match_template
 import skimage
 import skimage.transform
-import scipy.ndimage as ndi
 import oiffile
 
 import javabridge
@@ -25,16 +23,23 @@ import bioformats as bf
 
 javabridge.start_vm(class_path=bf.JARS)
 
-# import spotdetection.spot_detection as sp
-
-
-# loads an lsm file from filepath and keeps only full resolution image
-# returns a list of arrays for each wavelength
-
 
 def oif_import(filepath, channels=True):
+    """Import oif file format
 
-    # image = oiffile.imread(filepath)
+    Parameters
+    ----------
+    filepath : str
+        path to file
+    channels : bool
+        recover channel names
+
+    Returns
+    -------
+    image : ND numpy array
+        image
+
+    """
 
     oibfile = oiffile.OifFile(filepath)
     image = oibfile.asarray()
@@ -52,6 +57,19 @@ def oif_import(filepath, channels=True):
 
 
 def oir_import(filepath):
+    """Import oir file format via bioformats
+
+    Parameters
+    ----------
+    filepath : str
+        path to file
+
+    Returns
+    -------
+    image : ND numpy array
+        image
+
+    """
 
     with bf.ImageReader(filepath) as reader:
         image = reader.read(series=0, rescale=False)
@@ -59,6 +77,7 @@ def oir_import(filepath):
 
 
 def oif_get_channels(filepath):
+    """Show channesl present in oif file"""
 
     oibfile = oiffile.OifFile(filepath)
 
@@ -72,9 +91,10 @@ def oif_get_channels(filepath):
 
 
 def segment_nuclei(image, radius=15):
+    """Basic threshold based nuclei segmetnation"""
 
     sigma = radius / np.sqrt(2)
-    im_gauss = gaussian(image.astype(float), sigma=1)
+    im_gauss = gaussian(image.astype(float), sigma=sigma)
 
     # create a global mask where nuclei migth be fused
     th_nucl = threshold_li(im_gauss)
@@ -89,34 +109,62 @@ def segment_nuclei(image, radius=15):
     peaks = peaks*mask_nucl
 
     #use the blobal and the refined maks for watershed
-    im_water = watershed(-image, markers=label(peaks), mask=mask_nucl)#, compactness=1)"""
+    im_water = watershed(
+        -image, markers=label(peaks), mask=mask_nucl)#, compactness=1)"""
 
     return mask_label
 
 
 def segment_nuclei_cellpose(image, model, diameter):
+    """Segment nuclei using cellpose
+
+    Parameters
+    ----------
+    image : 2D numpy array
+        image with nuclei
+    model : cellpose model
+    diameter : estimated nuclei diameter
+
+    Returns
+    -------
+    mask : 2D numpy array
+        labelled mask of nuclei
+
+    """
 
     masks, _, _, _ = model.eval(
-        [image[::1, ::1]], channels=[[0,]], diameter=diameter
-    )
-    # mask = skimage.transform.resize(masks[0], image.shape, preserve_range=True, order=0)
+        [image[::1, ::1]], channels=[[0, ]], diameter=diameter
+        )
+    """mask = skimage.transform.resize(
+        masks[0], image.shape, preserve_range=True, order=0)"""
+
     mask = masks[0]
 
     return mask
 
 
-# create beacteria template
 def create_template(length=7, width=3):
-    # create the bacteria template and its rotated verions
+    """Create series of rotated bacteria templates
 
-    # template = np.zeros((7,7))
-    # template[1:6,2:5]=1
+    Parameters
+    ----------
+    length : int
+        bacteria length
+    width : int
+        bacteria width
+
+    Returns
+    -------
+    rot_templ : list of 2D numpy arrays
+        series of rotated templates
+
+    """
 
     template = np.zeros((length + 2, length + 2))
     template[
-        1 : 1 + length,
+        1: 1 + length,
         int((length + 1) / 2)
-        - int((width - 1) / 2) : int((length + 1) / 2)
+        - int((width - 1) / 2): int((length + 1) / 2)
         + int((width - 1) / 2)
         + 1,
     ] = 1
@@ -129,15 +177,32 @@ def create_template(length=7, width=3):
     return rot_templ
 
 
-# detect bacteria in image. This function needs to be improved so that bacteria size is a parameter
-# and not hardcoded
 def detect_bacteria(image, rot_template, mask=None):
+    """Detect bacteria by template matching with series
+    of rotated templates and max projection.
 
+    Parameters
+    ----------
+    image : 2D numpy array
+        bacteria image
+    rot_template : list of 2D numpy arrays
+        list of rotated templates
+    mask : 2D numpy array
+        masks of regions to conserve
+
+    Returns
+    -------
+    maxproj : 2D numpy array
+        max proj. over template matching for
+        all rotation angles
+
+    """
     # do template matching with all rotated templates
     all_match = rotational_matching(image, rot_template)
 
-    # calculate max proj of those images matched with templates at different angles
-    # maxarg contains for each pixel the plane index of best match and hence the angle
+    # calculate max proj of those images matched with templates
+    # at different angles maxarg contains for each pixel the plane index
+    # of best match and hence the angle
     maxproj = np.max(all_match, axis=0)
 
     if mask is not None:
@@ -147,7 +212,26 @@ def detect_bacteria(image, rot_template, mask=None):
 
 
 def rotational_matching(image, rot_template):
-    all_match = np.zeros((len(rot_template) + 1, image.shape[0], image.shape[1]))
+    """Perform template matching with seris of rotated
+    templates.
+
+    Parameters
+    ----------
+    image : 2D numpy array
+        bacteria image
+    rot_template : list of 2D numpy arrays
+        list of rotated templates
+
+    Returns
+    -------
+    all_match : list of 2D numpy arrays
+        list of matched images
+
+    """
+
+    all_match = np.zeros(
+        (len(rot_template) + 1, image.shape[0], image.shape[1])
+        )
     for ind in range(len(rot_template)):
         all_match[ind + 1, :, :] = match_template(
             image, rot_template[ind], pad_input=True
@@ -156,10 +240,28 @@ def rotational_matching(image, rot_template):
 
 
 def remove_small(image, minsize):
+    """Use region properties to keep only regions larger
+    than a threshold size in a mask and return cleaned mask.
+
+    Parameters
+    ----------
+    image : 2D numpy array
+        mask
+    minsize : int
+        minimak region size to keep
+
+    Returns
+    -------
+    mask : 2D numpy array
+        cleaned mask
+
+    """
 
     labeled = skimage.morphology.label(image > 1)
     regions = skimage.measure.regionprops(labeled)
-    indices = np.array([0] + [x.label if (x.area > minsize) else 0 for x in regions])
+    indices = np.array(
+        [0] +
+        [x.label if (x.area > minsize) else 0 for x in regions])
     mask = indices[labeled] > 0
     mask = mask + 1
 
@@ -167,8 +269,26 @@ def remove_small(image, minsize):
 
 
 def select_labels(im_label, im_properties=None, limit_dict={"label": 0}):
-    """Given a labelled image and pairs of properties/thresholds, keep only lables
-    of regions with properties above thresholds"""
+    """Given a labelled image and pairs of properties/thresholds, keep only
+    labels of regions with properties above thresholds and return clean mask.
+
+    Parameters
+    ----------
+    im_label : 2D numpy array
+        labelled mask
+    im_properties : dataframe
+        dataframe of output of
+        skimage.measure.regionprops_table
+    limit_dict: dictionary
+        dictionary of thresholds for multiple properties
+        e.g. {'label': 0, 'area': 20}
+
+    Returns
+    -------
+    clean_labels : 2D numpy array
+        cleaned labels
+
+    """
 
     if im_properties is None:
         im_properties = pd.DataFrame(
@@ -184,7 +304,9 @@ def select_labels(im_label, im_properties=None, limit_dict={"label": 0}):
 
     # create index array to subselect labels
     indices = np.array(
-        [i if i in sel_labels else 0 for i in np.arange(im_properties.label.max() + 1)]
+        [
+            i if i in sel_labels else 0
+            for i in np.arange(im_properties.label.max() + 1)]
     )
 
     clean_labels = indices[im_label]
@@ -192,8 +314,21 @@ def select_labels(im_label, im_properties=None, limit_dict={"label": 0}):
 
 
 def volume_periodic_labelling(rotation_vol):
-    """Given a binary volume create a labelled volume with periodic boundary conditions
-    along the first dimension"""
+    """Given a binary volume create a labelled volume with
+    periodic boundary conditions along the first dimension.
+
+    Parameters
+    ----------
+    rotation_vol : 3D numpy array
+        mask
+
+    Returns
+    -------
+    total_vol : 3D numpy array
+        relabelled array where periodically connected regions
+        along z (first dim) share labels
+
+    """
 
     original_size = rotation_vol.shape
 
@@ -206,14 +341,18 @@ def volume_periodic_labelling(rotation_vol):
     # extract labels at the interface of the two assembled volumes
     new_labels = np.unique(rotation_vol_label[original_size[0], :, :])
 
-    # extract the labels at the same position as the new_labels but in the first layer
+    # extract the labels at the same position as the new_labels
+    # but in the first layer
     old_labels_to_remove = rotation_vol_label[0, :, :][
         rotation_vol_label[original_size[0], :, :] > 0
     ]
 
-    # construct index list of labels to keep for replacement in the assembled volume
+    # construct index list of labels to keep for replacement
+    # in the assembled volume
     indices = np.array(
-        [i if i in new_labels else 0 for i in np.arange(rotation_vol_label.max() + 1)]
+        [
+            i if i in new_labels else 0
+            for i in np.arange(rotation_vol_label.max() + 1)]
     )
 
     # construct index list of labels to keep in the original volume
@@ -228,41 +367,11 @@ def volume_periodic_labelling(rotation_vol):
     keep_overlapping = indices[rotation_vol_label]
     keep_old = indices2[rotation_vol_label]
     total_vol = (
-        keep_old[0 : original_size[0], :, :]
-        + keep_overlapping[original_size[0] : :, :, :]
+        keep_old[0: original_size[0], :, :]
+        + keep_overlapping[original_size[0]::, :, :]
     )
 
     return total_vol
-
-
-"""def detect_spots(image, sigmaXY, sigmaZ):
-    
-    #create filters
-    gfilt = sp.make_g_filter(modelsigma=sigmaXY,modelsigmaZ=sigmaZ)
-    gfilt_log = sp.make_laplacelog(modelsigma=sigmaXY,modelsigmaZ=sigmaZ)
-    
-    #pad image and filter it
-    im_exo_pd = np.pad(image,((0,0),(0,0),(5,5)),mode = 'mean')
-    filtered = sp.spot_filter_convfft(im_exo_pd, gfilt, gfilt_log, alpha = 0.05, loc_max_dist = 2)
-    
-    #find regions that match the template shape and find local maxima
-    matched = match_template(im_exo_pd, gfilt, pad_input=True)
-    match_locmax = peak_local_max(matched,min_distance = 2, indices = False,threshold_abs=0.5)
-
-    #recover amplitude and background of maxima in filtered image
-    amp_0 = filtered['amplitude'][match_locmax]
-    b_0 = filtered['background'][match_locmax]
-
-    #create a dataframe with all spot information. Remove spots too close to the edges
-    spot_coord = np.where(match_locmax)
-    spot_coord = np.stack(spot_coord).T
-
-    spot_prop = pd.DataFrame(np.c_[spot_coord,amp_0, b_0],columns=['x','y','z','A','b'])
-    spot_prop = spot_prop[(spot_prop.x-6>=0)&(spot_prop.x+7<im_exo_pd.shape[0])]
-    spot_prop = spot_prop[(spot_prop.y-6>=0)&(spot_prop.y+7<im_exo_pd.shape[1])]
-    spot_prop = spot_prop[(spot_prop.z-6>=0)&(spot_prop.z+7<im_exo_pd.shape[2])]
-    
-    return spot_prop"""
 
 
 def normal_fit(self, x, a, x0, s):
@@ -271,9 +380,37 @@ def normal_fit(self, x, a, x0, s):
 
 
 def fit_gaussian_hist(data, plotting=True, minbin=0, maxbin=4000, binwidth=30):
+    """Fit a gaussian to the histogram of a data set.
 
-    fitfunc = lambda p, x: p[0] * np.exp(-0.5 * ((x - p[1]) / p[2]) ** 2)
-    errfunc = lambda p, x, y: (y - fitfunc(p, x))
+    Parameters
+    ----------
+    data : numpy array
+        data to fit
+    plotting : bool
+        show fit output
+    minbin : int
+        minimum value of bin
+    maxbin : int
+        maximum value of bin
+    binwidth : float
+        with of bins
+
+
+    Returns
+    -------
+    out : list
+        output of fitting procedure
+        out[0][0] is amplitud, out[0][1] is mean,
+        out[0][2] is covariances
+    fig : matplotlib figure object
+
+    """
+
+    def fitfunc(p, x):
+        return p[0] * np.exp(-0.5 * ((x - p[1]) / p[2]) ** 2)
+
+    def errfunc(p, x, y):
+        return (y - fitfunc(p, x))
 
     ydata, xdata = np.histogram(data, bins=np.arange(minbin, maxbin, binwidth))
     xdata = [0.5 * (xdata[x] + xdata[x + 1]) for x in range(len(xdata) - 1)]
@@ -282,12 +419,14 @@ def fit_gaussian_hist(data, plotting=True, minbin=0, maxbin=4000, binwidth=30):
     out = leastsq(errfunc, init, args=(xdata, ydata))
 
     fig = []
-    if plotting == True:
+    if plotting is True:
         fig, ax = plt.subplots()
         plt.bar(x=xdata, height=ydata, width=binwidth, color="r")
         plt.plot(xdata, fitfunc(out[0], xdata))
         plt.plot(
-            [out[0][1] + 3 * np.abs(out[0][2]), out[0][1] + 3 * np.abs(out[0][2])],
+            [
+                out[0][1] + 3 * np.abs(out[0][2]),
+                out[0][1] + 3 * np.abs(out[0][2])],
             [0, np.max(ydata)],
             "green",
         )
@@ -300,6 +439,22 @@ def fit_gaussian_hist(data, plotting=True, minbin=0, maxbin=4000, binwidth=30):
 
 
 def filter_sets(image):
+    """Create series of filtered images for ML
+
+    Parameters
+    ----------
+    image : 2D numpy array
+        image to filter
+
+    Returns
+    -------
+    filter_list : list of 2D numpy arrays
+        list of filtered images
+    filter_names : list of str
+        list of filter names
+
+    """
+
     im_gauss = skimage.filters.gaussian(image, sigma=10, preserve_range=True)
     im_gauss2 = skimage.filters.gaussian(image, sigma=20, preserve_range=True)
     im_frangi = skimage.filters.frangi(image)
@@ -308,8 +463,10 @@ def filter_sets(image):
     im_gauss_laplace = skimage.filters.laplace(
         skimage.filters.gaussian(image, sigma=5, preserve_range=True), ksize=10
     )
-    im_gradient = skimage.filters.rank.gradient(image, skimage.morphology.disk(8))
-    im_entropy = skimage.filters.rank.entropy(image, skimage.morphology.disk(8))
+    im_gradient = skimage.filters.rank.gradient(
+        image, skimage.morphology.disk(8))
+    im_entropy = skimage.filters.rank.entropy(
+        image, skimage.morphology.disk(8))
     im_roberts = skimage.filters.roberts(
         skimage.filters.gaussian(image, sigma=5, preserve_range=True)
     )
