@@ -81,7 +81,7 @@ class Gui(Bact):
         # widget to set the diameter used by cellpose for nuclei
         self.cellpose_diam_field = ipw.IntText(
             description="Average nucleus diameter",
-            layout={"width": "200px"},
+            layout={"width": "400px"},
             style={"description_width": "initial"},
             value=60,
         )
