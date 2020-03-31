@@ -1,7 +1,10 @@
-name: bactinfection
+name: bact_cellpose
 channels:
   - conda-forge
 dependencies:
+  - python<=3.7
+  - mkl=2019.3
+  - numba>=0.43.1
   - scipy
   - numpy
   - matplotlib
@@ -13,11 +16,19 @@ dependencies:
   - voila
   - nodejs
   - pip
+  - openjdk=8
   - pip:
+    - mxnet-mkl
+    - opencv_python
+    - natsort
+    - google-cloud-storage
+    - tqdm
     - python-bioformats
     - oiffile
     - napari
     - scikit-learn
-    - git+https://github.com/guiwitz/bactinfection.git@master#egg=bactinfection
+    - git+https://github.com/guiwitz/bactinfection.git@cellpose#egg=bactinfection
+    - cellpose
+    - plotnine
 #jupyter labextension install @jupyter-widgets/jupyterlab-manager
 #jupyter labextension install @jupyter-voila/jupyterlab-preview
