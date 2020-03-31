@@ -6,16 +6,15 @@ Class implementing an interactive annotation tool for ML segmentation
 # License: BSD3
 
 
-import os
+import os, re
 from pathlib import Path
 import napari
 import skimage
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import ipywidgets as ipw
 import pickle
-from IPython.display import clear_output
+from IPython.display import clear_output, display
 
 from vispy.color.colormap import Colormap, ColorArray
 
@@ -66,19 +65,43 @@ class Annotate(Bact):
             layout={"width": "200px"},
             style={"description_width": "initial"},
         )
-        self.default_path_from_browser_button.on_click(self.change_default_from_browser)
+        self.default_path_from_browser_button.on_click(
+            self.change_default_from_browser)
 
+        # create browser
         self.folders = Folders()
         self.folders.file_list.observe(self.get_filenames, names="options")
 
+        # option to name saving/loading folder
+        self.saveto_widget = ipw.Text(value="Segmented")
+        self.saveto_widget.observe(self.update_saveto, names="value")
+
+        # widget to set specific zoom to use if multiple are available
+        self.zoom_field = ipw.IntText(
+            description="zoom to analyze",
+            layout={"width": "200px"},
+            style={"description_width": "initial"},
+            value=None,
+        )
+        self.zoom_field.observe(self.update_zoom, names="value")
+        self.zoom_field.observe(self.get_filenames, names="value")
+
+        # widget to turn zoom selection ON/OFF
+        self.zoom_on_off = ipw.Checkbox(description="Select zoom", value=False)
+        self.out_zoom = ipw.Output()
+        self.zoom_on_off.observe(self.zoom_params, names="value")
+
         self.out = ipw.Output()
 
+        # widget for naming of acquired channels
         self.channel_field = ipw.Text(
             description="Channels",
             layout={"width": "700px"},
             value="DAPI, GFP, Phal, Unknow",
         )
+        self.channel_field.observe(self.update_values, names="value")
 
+        # widget to set minimal nucleus size
         self.minsize_field = ipw.IntText(
             description="Minimal nucleus size",
             layout={"width": "200px"},
@@ -86,17 +109,19 @@ class Annotate(Bact):
             value=0,
         )
         self.minsize_field.observe(self.update_minsize, names="value")
+
+        # widget to turn hole filling in nuclei ON/OFF
         self.fillholes_checks = ipw.Checkbox(description="Fill holes", value=False)
         self.fillholes_checks.observe(self.update_fillholes, names="value")
 
+        # widget for selection of channels to use for nuclei segmentation
         self.nucl_channel_seg = ipw.Select(
             options=self.channel_field.value.replace(" ", "").split(","),
             layout={"width": "200px"},
             style={"description_width": "initial"},
+            value=None
         )
         self.nucl_channel_seg.observe(self.update_nucl_channel, names="value")
-
-        self.channel_field.observe(self.update_values, names="value")
 
         # recover default path
         if os.path.isfile("settings.txt"):
@@ -110,9 +135,11 @@ class Annotate(Bact):
             with open("settings.txt", "w") as f:
                 f.write(os.getcwd())
 
+        # Initialize files and variables
         self.get_filenames(None)
         self.update_values(None)
 
+        # wudget to start annotation
         self.button_start = ipw.Button(
             description="Start annotating",
             layout={"width": "200px"},
@@ -120,6 +147,7 @@ class Annotate(Bact):
         )
         self.button_start.on_click(self.create_napariview)
 
+        # widget to save annotation
         self.button_save = ipw.Button(
             description="Save annotations and ML",
             layout={"width": "200px"},
@@ -127,6 +155,7 @@ class Annotate(Bact):
         )
         self.button_save.on_click(self.save_state)
 
+        # widget to load annotations
         self.button_load = ipw.Button(
             description="Load annotations and ML",
             layout={"width": "200px"},
@@ -134,6 +163,7 @@ class Annotate(Bact):
         )
         self.button_load.on_click(self.load_state)
 
+        # define filter names
         self.names = [
             "Gauss $\sigma$=10",
             "Gauss $\sigma$=20",
@@ -146,12 +176,14 @@ class Annotate(Bact):
             "Roberts",
         ]
 
-        self.annotations = {os.path.split(x)[1]: None for x in self.all_files}
+    def initialize_annotation(self):
+        '''Initialize data containers for annotations'''
 
         self.training_features = {os.path.split(x)[1]: None for x in self.all_files}
         self.training_targets = {os.path.split(x)[1]: None for x in self.all_files}
 
     def change_default(self, b):
+        """Update default path using manual text input"""
 
         new_path = os.path.normpath(self.default_path_text.value)
         with self.out:
@@ -163,6 +195,7 @@ class Annotate(Bact):
             self.folders.refresh()
 
     def change_default_from_browser(self, b):
+        """Update default path using current interactive folder setting"""
 
         new_path = self.folders.cur_dir.as_posix()
         self.default_path_text.value = new_path
@@ -170,18 +203,40 @@ class Annotate(Bact):
             f.write(new_path)
 
     def get_filenames(self, change=None):
-        """Initialize file list with lsm files present in folder"""
+        """Initialize file list with oir/oib files present in folder"""
 
-        # with self.outcheck:
-        #    print('here')
         self.all_files = [
             os.path.split(x)[1] for x in self.folders.cur_dir.glob("*.oir")
         ]
+        self.all_files += [
+            os.path.split(x)[1] for x in self.folders.cur_dir.glob("*.oib")
+        ]
+
         if len(self.all_files) > 0:
             self.current_file = os.path.split(self.all_files[0])[1]
+            # keep only specific zoom
+            if self.zoom > 0:
+                zoom_regexp = [
+                    [x, re.findall("\_(\d+)x.{0,1}?\_", x)]
+                    for x in self.all_files
+                ]
+                zoom_regexp = [
+                    [x[0], x[1][0]] for x in zoom_regexp if len(x[1]) > 0]
+                self.all_files = [
+                    x[0] for x in zoom_regexp if x[1] == str(self.zoom)]
 
         self.folder_name = self.folders.cur_dir.as_posix()
+
+        # rename files that don't end as an index filename_XXXXX.oir
+        for ind, f in enumerate(self.all_files):
+            if os.path.splitext(f)[1] == ".oir" and not f[-5].isdigit():
+                source = os.path.join(self.folder_name, f)
+                destination = os.path.join(self.folder_name, f[0:-4] + "_0000.oir")
+                os.rename(src=source, dst=destination)
+                self.all_files[ind] = f[0:-4] + "_0000.oir"
+
         self.initialize_output()
+        self.initialize_annotation()
 
     def update_values(self, change):
         """call-back function for file upload. Uploads selected files
@@ -189,6 +244,10 @@ class Annotate(Bact):
 
         self.channels = self.channel_field.value.replace(" ", "").split(",")
         self.nucl_channel_seg.options = self.channels
+
+    def update_saveto(self, change):
+
+        self.saveto = change["new"]
 
     def update_minsize(self, change):
 
@@ -202,7 +261,25 @@ class Annotate(Bact):
 
         self.fillholes = change["new"]
 
+    def zoom_params(self, change):
+        """Display zoom parameter if used"""
+
+        if change["new"] is True:
+            with self.out_zoom:
+                clear_output()
+                display(self.zoom_field)
+
+        elif change["new"] is False:
+            with self.out_zoom:
+                clear_output()
+                self.zoom_field.value = 0
+
+    def update_zoom(self, change):
+
+        self.zoom = change["new"]
+
     def import_image(self, local_file=None):
+
         if local_file is None:
             if len(self.folders.file_list.value) > 0:
                 local_file = self.folders.file_list.value[0]
@@ -213,7 +290,8 @@ class Annotate(Bact):
 
         self.import_file(filepath)
         ch = self.channels.index(self.nucl_channel_seg.value)
-        self.image = skimage.transform.rescale(self.current_image[:, :, ch], 0.5)
+        self.image = skimage.transform.rescale(
+            self.current_image[:, :, ch], 0.5)
 
     def create_napariview(self, b):
         """Initialize file list with lsm files present in folder"""
@@ -238,13 +316,16 @@ class Annotate(Bact):
             # image layer
             self.image_layer = self.view.add_image(self.image)
 
-            # labels layer. We create two labelled single-pixels for the two categories, so that
-            # sklearn stays happy after one draws the first label
-            self.labels_layer = self.view.add_labels(data=im_label, name="manual label")
+            # labels layer. We create two labelled single-pixels for
+            # the two categories, so that sklearn stays happy after
+            # one draws the first label
+            self.labels_layer = self.view.add_labels(
+                data=im_label, name="manual label")
             self.labels_layer.colormap = (
                 "red_blue1",
                 Colormap(
-                    colors=ColorArray(color=((0, 0, 0, 0), (1, 0, 0, 1), (0, 0, 1, 1))),
+                    colors=ColorArray(
+                        color=((0, 0, 0, 0), (1, 0, 0, 1), (0, 0, 1, 1))),
                     controls=[0, 0.1, 0.2, 1.0],
                     interpolation="zero",
                 ),
@@ -311,10 +392,12 @@ class Annotate(Bact):
                 self.import_image(f)
                 self.calculate_filters(self.image)
 
-                features = pd.DataFrame(index=np.arange(np.sum(current_labels > 0)))
+                features = pd.DataFrame(
+                    index=np.arange(np.sum(current_labels > 0)))
 
                 for ind, x in enumerate(self.names):
-                    features[x] = np.ravel(self.all_filt[ind][current_labels > 0])
+                    features[x] = np.ravel(
+                        self.all_filt[ind][current_labels > 0])
 
                 targets = pd.Series(
                     np.ravel(current_labels[current_labels > 0]).astype(int)
@@ -356,10 +439,12 @@ class Annotate(Bact):
                 all_pixels[x] = np.ravel(self.all_filt[ind])
             predictions = random_forrest.predict(all_pixels)
 
-            predicted_image = np.reshape(predictions, self.image_layer.data.shape)
+            predicted_image = np.reshape(
+                predictions, self.image_layer.data.shape)
 
             if self.minsize > 0:
-                predicted_image = utils.remove_small(predicted_image, self.bact.minsize)
+                predicted_image = utils.remove_small(
+                    predicted_image, self.bact.minsize)
 
         return predicted_image
 
@@ -375,13 +460,16 @@ class Annotate(Bact):
         self.annotations[self.current_file] = self.labels_layer.data
 
         # capture new features
-        features = pd.DataFrame(index=np.arange(np.sum(self.labels_layer.data > 0)))
+        features = pd.DataFrame(
+            index=np.arange(np.sum(self.labels_layer.data > 0)))
 
         for ind, x in enumerate(self.names):
-            features[x] = np.ravel(self.all_filt[ind][self.labels_layer.data > 0])
+            features[x] = np.ravel(
+                self.all_filt[ind][self.labels_layer.data > 0])
 
         targets = pd.Series(
-            np.ravel(self.labels_layer.data[self.labels_layer.data > 0]).astype(int)
+            np.ravel(
+                self.labels_layer.data[self.labels_layer.data > 0]).astype(int)
         )
 
         self.training_features[self.current_file] = features
@@ -413,7 +501,10 @@ class Annotate(Bact):
 
     def save_state(self, b):
         self.save_segmentation()
-        file_to_save = self.folder_name + "/Segmented/ml_model.pkl"
+        file_to_save = os.path.join(
+            self.folder_name, self.saveto,
+            "ml_model.pkl"
+        )
         with open(file_to_save, "wb") as f:
             pickle.dump(self.ml, f)
 
@@ -433,4 +524,3 @@ class Annotate(Bact):
         self.view.mouse_drag_callbacks.append(self.mouse_callback)
         self.view.bind_key("w", self.next_image)
         self.view.bind_key("p", self.previous_image)
-
