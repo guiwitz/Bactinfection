@@ -61,7 +61,7 @@ class Gui(Bact):
         self.channel_field = ipw.Text(
             description="Channels",
             layout={"width": "700px"},
-            value="DAPI, GFP, Phal, Unknow",
+            value="DAPI, GFP, Phal, Unknown",
         )
         self.channel_field.observe(self.update_values, names="value")
 
@@ -85,7 +85,8 @@ class Gui(Bact):
             style={"description_width": "initial"},
             value=60,
         )
-        self.cellpose_diam_field.observe(self.update_cellpose_diam, names="value")
+        self.cellpose_diam_field.observe(
+            self.update_cellpose_diam, names="value")
 
         # widget to set specific zoom to use if multiple are available
         self.zoom_field = ipw.IntText(
@@ -127,10 +128,17 @@ class Gui(Bact):
             style={"description_width": "initial"},
             value=None,
         )
+        self.actin_channel_seg = ipw.Select(
+            options=self.channel_field.value.replace(" ", "").split(","),
+            layout={"width": "200px"},
+            style={"description_width": "initial"},
+            value=None,
+        )
 
         self.nucl_channel_seg.observe(self.update_nucl_channel, names="value")
         self.bact_channel_seg.observe(self.update_bact_channel, names="value")
         self.cell_channel_seg.observe(self.update_cell_channel, names="value")
+        self.actin_channel_seg.observe(self.update_actin_channel, names="value")
 
         # widget for loading of segmentation
         self.load_button = ipw.Button(
@@ -215,6 +223,7 @@ class Gui(Bact):
         self.all_files += [
             os.path.split(x)[1] for x in self.folders.cur_dir.glob("*.oib")
         ]
+        self.all_files = [x for x in self.all_files if x[0] != '.']
 
         if len(self.all_files) > 0:
             self.current_file = os.path.split(self.all_files[0])[1]
@@ -249,10 +258,12 @@ class Gui(Bact):
         self.nucl_channel_seg.options = self.channels
         self.bact_channel_seg.options = self.channels
         self.cell_channel_seg.options = self.channels
+        self.actin_channel_seg.options = self.channels
 
         self.nucl_channel_seg.value = None
         self.bact_channel_seg.value = None
         self.cell_channel_seg.value = None
+        self.actin_channel_seg.value = None
 
     def seg_type_params(self, change):
         """Callback to update available options depending on segmentation
@@ -291,6 +302,10 @@ class Gui(Bact):
     def update_cell_channel(self, change):
 
         self.cell_channel = change["new"]
+
+    def update_actin_channel(self, change):
+
+        self.actin_channel = change["new"]
 
     def zoom_params(self, change):
         """Display zoom parameter if used"""
@@ -336,11 +351,13 @@ class Gui(Bact):
             temp_nucl = self.nucl_channel
             temp_bact = self.bact_channel
             temp_cell = self.cell_channel
+            temp_actin = self.actin_channel
 
             self.channel_field.value = ", ".join(self.channels)
             self.nucl_channel_seg.value = temp_nucl
             self.bact_channel_seg.value = temp_bact
             self.cell_channel_seg.value = temp_cell
+            self.actin_channel_seg.value = temp_actin
             self.minsize_field.value = self.minsize
             self.fillholes_checks.value = self.fillholes
             self.cellpose_diam_field.value = self.cellpose_diam
@@ -392,10 +409,11 @@ class Gui(Bact):
                             "Processing file " + str(ind) + "/" + str(totfiles) + " ..."
                         )
                         valid = self.run_analysis(
-                            self.nucl_channel_seg.value,
-                            self.bact_channel_seg.value,
-                            self.cell_channel_seg.value,
-                            self.folder_name + "/" + f,
+                            filepath=os.path.join(self.folder_name, f),
+                            nucl_channel=self.nucl_channel_seg.value,
+                            bact_channel=self.bact_channel_seg.value,
+                            cell_channel=self.cell_channel_seg.value,
+                            actin_channel=self.actin_channel_seg.value,
                         )
                         if not valid:
                             break

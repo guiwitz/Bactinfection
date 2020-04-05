@@ -126,15 +126,12 @@ class Analysis(Bact):
             layout={"width": "200px"},
             style={"description_width": "initial"},
         )
-        self.sel_channel.observe(self.plot_byhour_callback, names="value")
 
         # selection of bin size for histogram
         self.bin_width = ipw.IntSlider(min=10, max=1000, value=50)
-        self.bin_width.observe(self.plot_byhour_callback, names="value")
-
+        
         # selection of hour to plot in histogram
         self.hour_select = ipw.Select(options=[], value=None)
-        self.hour_select.observe(self.plot_byhour_callback, names="value")
 
         ###### Time-curve visualization ##################################
         # plot time curve
@@ -209,6 +206,7 @@ class Analysis(Bact):
         self.all_files += [
             os.path.split(x)[1] for x in self.folders.cur_dir.glob("*.oib")
         ]
+        self.all_files = [x for x in self.all_files if x[0] != '.']
 
         if len(self.all_files) > 0:
             self.current_file = os.path.split(self.all_files[0])[1]
@@ -229,11 +227,11 @@ class Analysis(Bact):
         self.sel_channel.options = self.channels
         self.sel_channel_time.options = self.channels
         self.create_result()
-        self.hour_select.options = self.result.hour.unique()
+        self.hour_select.options = self.nuclei_count.hour.unique()
 
         self.load_button.description = "Load segmentation"
 
-    def create_result(self):
+    def create_result_with_th(self):
         """Collect measurements of all images into dataframe and
         count nuclei"""
 
@@ -241,22 +239,35 @@ class Analysis(Bact):
         if self.result_ran is None:
             self.result_ran = self.bact_calc_mean_background()
 
-        # calcualate bacteria intensities in all channels
-        measurements = pd.concat(
-            [
-                self.bact_measurements[x]
-                for x in self.bact_measurements
-                if self.bact_measurements[x] is not None
-            ]
-        )
+        if self.result is None:
+            # calcualate bacteria intensities in all channels
+            measurements = pd.concat(
+                [
+                    self.bact_measurements[x]
+                    for x in self.bact_measurements
+                    if self.bact_measurements[x] is not None
+                ]
+            )
 
-        measurements = self.parse_hour_replicates(measurements)
+            measurements = self.parse_hour_replicates(measurements)
 
-        # count nuclei
-        nuclei_count = self.count_nuclei()
+            self.result = measurements
+        
+        # # count nuclei
+        # nuclei_count = self.count_nuclei()
+        # self.nuclei_count = nuclei_count
 
-        self.result = measurements
-        self.nuclei_count = nuclei_count
+    def create_result(self):
+        '''Simple count bacteria, cells, actin tails'''
+
+        self.bact_count = self.count_objects(
+            object_dict=self.bacteria_segmentation, name='number_bacteria')
+        self.nuclei_count = self.count_objects(
+            object_dict=self.nuclei_segmentation, name='number_nuclei')
+        self.actin_count = self.count_objects(
+            object_dict=self.actin_segmentation, name='number_actin')
+        
+        self.data_aggregation()
 
     def count_nuclei(self):
         """Create dataframe with nuclei count for each image"""
@@ -272,6 +283,21 @@ class Analysis(Bact):
         nuclei_count = self.parse_hour_replicates(nuclei_count)
 
         return nuclei_count
+
+    def count_objects(self, object_dict, name):
+        """Create dataframe with object-name count for each image"""
+        dict_list = []
+        for x in object_dict:
+            if object_dict[x] is not None:
+                num_obj = None
+                if object_dict[x].max() > 0:
+                    num_obj = np.sum(np.unique(object_dict[x]) > 0)
+                dict_list.append({"filename": x, name: num_obj})
+        object_count = pd.DataFrame(dict_list)
+
+        object_count = self.parse_hour_replicates(object_count)
+
+        return object_count
 
     def parse_hour_replicates(self, dataframe):
         """Use the filename parameter of dataframe to extract the hour
@@ -343,7 +369,7 @@ class Analysis(Bact):
                 # find first point lower than half max after peak
                 first_low = (
                     np.argwhere(
-                        (ydata > 0.5 * ydata.max())[ydata.argmax() : :] == False
+                        (ydata > 0.5 * ydata.max())[ydata.argmax()::] == False
                     )[0][0]
                     + ydata.argmax()
                 )
@@ -361,7 +387,7 @@ class Analysis(Bact):
             )
         self.threshold_global = pd.DataFrame(self.threshold_global)
 
-    def data_aggregation(self):
+    def data_aggregation_with_threshold(self):
         """Collect number of bacteria above background threshold and per
         nucleus for each image and calculate the average value"""
 
@@ -403,6 +429,30 @@ class Analysis(Bact):
         # calculate average number of "bacteria/nuclei"
         averaged = complete.groupby(["channel", "hour"]).mean().reset_index()
 
+        return averaged
+
+    def data_aggregation(self):
+
+        complete = pd.merge(
+            self.nuclei_count[["filename", "number_nuclei"]],
+            self.bact_count[["filename", "number_bacteria"]],
+            on="filename"
+        )
+        complete = pd.merge(
+            complete,
+            self.actin_count[["filename", "number_actin"]],
+            on="filename"
+        )
+
+        complete = self.parse_hour_replicates(complete)
+        complete['number_bacteria'] = complete['number_bacteria'] / complete['number_nuclei']
+        complete['number_actin'] = complete['number_actin'] / complete['number_nuclei']
+        self.complete = complete
+        self.complete = self.complete.fillna(0)
+
+        # calculate average number of "bacteria/nuclei"
+        averaged = complete.groupby(["hour"]).mean().reset_index()
+
         self.aggregated = averaged
 
     def create_color_list(self):
@@ -421,7 +471,7 @@ class Analysis(Bact):
                 count += 1
         return colors
 
-    def plot_time_curve(self, b=None):
+    def plot_time_curve_by_channel(self, b=None):
         """Callback to polot time curve of number of bacteria/nuclei for
         each selected channel. Called by plot_time_curve_button."""
 
@@ -462,10 +512,76 @@ class Analysis(Bact):
             with self.out_plot2:
                 display(myfig)
 
+    def plot_time_curve_with_threshold(self):
+        toplot = self.aggregated.melt(
+            id_vars='hour', value_vars=['number_bacteria', 'number_actin'],
+            value_name='counts', var_name='Object')
+
+        colors = self.create_color_list()
+
+        myfig = (
+                ggplot(toplot, aes("hour", "counts", color="Object"))
+                + geom_point()
+                + geom_line()
+                + labels.xlab("Time [hours]")
+                + labels.ylab("Average number of objects/nuclei")
+                + pn.scale_colour_manual(
+                    values=colors, labels=list(self.sel_channel_time.value), 
+                    name=""
+                )
+                + pn.labs(colour="")
+                + pn.scale_x_continuous(
+                    breaks=np.sort(self.result.hour.unique()),
+                    labels=list(np.sort(self.result.hour.unique()).astype(str))
+                )
+            )
+
+        self.time_curve_fig = myfig
+
+        self.out_plot2.clear_output()
+        with self.out_plot2:
+            display(myfig)
+
+    def plot_time_curve(self, b=None):
+        '''Plot time curve'''
+
+        self.out_plot2.clear_output()
+        with self.out_plot2:
+            fig, ax1 = plt.subplots()
+            #color = 'tab:red'
+            ax1.set_xlabel('Time (h)')
+            ax1.set_ylabel('Number of bacteria')#, color=color)
+            ax1.plot(
+                self.aggregated.hour, self.aggregated.number_bacteria, '-o',
+                color='black', label='Number of bacteria')
+            ax1.tick_params(axis='y')#, labelcolor=color)
+
+            ax2 = ax1.twinx()  # instantiate a second axes that shares the same x-axis
+
+            #color = 'tab:blue'
+            ax2.set_ylabel('Number of actin tails')#, color=color)  # we already handled the x-label with ax1
+            ax2.plot(
+                self.aggregated.hour, self.aggregated.number_actin, '-s',
+                color='black',label='Number of actin tails')
+            ax2.tick_params(axis='y')#, labelcolor=color)
+
+            fig.legend(loc=(0.15, 0.8))
+            plt.xticks(ticks=np.unique(self.aggregated.hour))
+            fig.tight_layout()  # otherwise the right y-label is slightly clipped
+            plt.show()
+            self.time_curve_fig = fig
+
     def plot_byhour_callback(self, b=None):
         """Callback function to plot bacteria intensities histograms.
         Called by button_plotbyhour and responds to selection changes 
         in channels and hour."""
+
+        # calculate histograms if necessary
+        self.create_result_with_th()
+
+        self.bin_width.observe(self.plot_byhour_callback, names="value")
+        self.hour_select.observe(self.plot_byhour_callback, names="value")
+        self.sel_channel.observe(self.plot_byhour_callback, names="value")
 
         self.out_plot.clear_output()
         with self.out_plot:
@@ -531,9 +647,10 @@ class Analysis(Bact):
             self.saveto,
             os.path.split(self.folder_name)[-1] + "_timecurve.png",
         )
-        self.time_curve_fig.save(
+        '''self.time_curve_fig.save(
             file_to_save, width=6.4, height=4.8, units="in", verbose=False
-        )
+        )'''
+        self.time_curve_fig.savefig(file_to_save)
 
     def clean_mask(self, local_file):
         """Given global thresholds for all channels and bacteria detection masks,

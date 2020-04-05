@@ -103,6 +103,7 @@ class Bact:
         self.nuclei_segmentation = {os.path.split(x)[1]: None for x in self.all_files}
         self.bacteria_segmentation = {os.path.split(x)[1]: None for x in self.all_files}
         self.cell_segmentation = {os.path.split(x)[1]: None for x in self.all_files}
+        self.actin_segmentation = {os.path.split(x)[1]: None for x in self.all_files}
         self.annotations = {os.path.split(x)[1]: None for x in self.all_files}
         self.bact_measurements = {os.path.split(x)[1]: None for x in self.all_files}
 
@@ -140,7 +141,7 @@ class Bact:
         )
         self.current_median_channel = channel
 
-    def segment_cells(self, channel, num_low_pixels=10000, num_std=10):
+    def segment_cells(self, channel, num_low_pixels=10000, num_std=1):
         """Segment cells found in a given channel. Estimates background
         and sets hard threshold.
 
@@ -158,14 +159,44 @@ class Bact:
 
         ch = self.channels.index(channel)
 
+        entropy = skimage.filters.rank.entropy(
+            self.current_image[:, :, ch], selem=np.ones((10, 10)))
+        cell_mask = entropy > 5.5
+        cell_mask = skimage.morphology.binary_opening(
+            cell_mask, selem=skimage.morphology.disk(10))
+
+        '''data = np.sort(np.ravel(self.current_image[:, :, ch]))
+        data = np.log(data)
+        ydata, xdata = np.histogram(data, bins=np.arange(0, data.max(), 0.05))
+        xdata = [0.5 * (xdata[x] + xdata[x + 1]) for x in range(len(xdata) - 1)]
+        # find first point lower than half max after peak
+        first_low = (
+            np.argwhere(
+                (ydata > 0.5 * ydata.max())[ydata.argmax()::]==False
+            )[0][0]
+            + ydata.argmax()
+        )
+        out, _ = utils.fit_gaussian_hist(
+            data[data < xdata[first_low]],
+            plotting=False,
+            maxbin=xdata[first_low] + 0.5,
+            binwidth=0.05,
+        )
+        threshold = np.exp(out[0][1] + num_std * out[0][2])
+        cell_mask = skimage.filters.median(
+            self.current_image[:, :, ch], selem=skimage.morphology.disk(5)) > threshold
+        cell_mask = skimage.morphology.binary_opening(
+            cell_mask, selem=skimage.morphology.disk(10))'''
+
+        '''# simplistic threshold
         back_pix = np.sort(np.ravel(self.current_image[:, :, ch]))[0:num_low_pixels]
         back_mean = np.mean(back_pix)
         back_std = np.std(back_pix)
 
         cell_mask = self.current_image[:, :, ch] > back_mean + num_std * back_std
         cell_mask = skimage.morphology.binary_opening(
-            cell_mask, selem=skimage.morphology.disk(5)
-        )
+            cell_mask, selem=skimage.morphology.disk(10)
+        )'''
 
         self.current_cell_mask = cell_mask
         self.cell_segmentation[self.current_file] = cell_mask
@@ -220,14 +251,13 @@ class Bact:
         labeled_mask = skimage.morphology.label(labeled_mask)
         self.nuclei_segmentation[self.current_file] = labeled_mask
 
-    def segment_bacteria(self, channel):
+    def segment_bacteria(self, channel, bact_width=5, bact_len=5, n_std=10):
         """Segment bacteria found in a given channel. Uses a series of rotated
         matching templates and a 3D rotation-volume segmentation."""
 
-        rot_templ = -np.ones((5, 5))
+        rot_templ = -np.ones((bact_len, bact_width))
         rot_templ[:, 1:-1] = 1
 
-        n_std = 20
         # recover nuclei and cell mask
         nucl_mask = self.nuclei_segmentation[self.current_file] > 0
         cell_mask = self.cell_segmentation[self.current_file]
@@ -301,14 +331,110 @@ class Bact:
         # overlapping regions
         new_label_image_proj = np.max(new_label_image, axis=0)
         new_label_image_proj = new_label_image_proj * cell_mask
-        remove_small = utils.select_labels(
-            new_label_image_proj,
-            limit_dict={"area": 2})
+        if new_label_image_proj.max() > 0:
+            remove_small = utils.select_labels(
+                new_label_image_proj,
+                limit_dict={"area": 2})
+        else:
+            remove_small = new_label_image_proj
 
         self.bacteria_segmentation[self.current_file] = remove_small
 
         self.all_match = all_match
         self.rotation_vol_label = rotation_vol_label
+
+    def segment_actintails(self, channel, bact_width=9, bact_len=17, n_std=3):
+        '''Detect actin tails. Same general approach as for bacteria by
+        template matching of rotating tube-like feature'''
+
+        # two templates are used: small and large widths
+        rot_templ = -np.ones((bact_len, bact_width))
+        rot_templ[:, 1:-1] = 1
+
+        rot_templ2 = -np.ones((bact_len, bact_width+3))
+        rot_templ2[:, 1:-1] = 1
+
+        # recover nuclei and cell mask
+        nucl_mask = self.nuclei_segmentation[self.current_file] > 0
+        cell_mask = self.cell_segmentation[self.current_file]
+
+        # remove bright nuclei regions
+        cell_mask = cell_mask & ~nucl_mask
+        cell_mask = cell_mask.astype(bool)
+
+        # calculate median filter image
+        self.calculate_median(channel)
+        image = self.current_image_med
+
+        # calculate an intensity threshold by fitting a gaussian on background
+        out, _ = utils.fit_gaussian_hist(image[cell_mask], plotting=False)
+        intensity_th = out[0][1] + n_std * np.abs(out[0][2])
+
+        # rotate image over a series of angles and do template matching
+        # this has the advantage that the template is always the same and
+        # corresponds to the true mode i.e. bright band with dark borders
+        rot_im = []
+        to_pad = int(0.5 * image.shape[0] * (2 ** 0.5 - 1))
+        im_pad = np.pad(image, to_pad)
+        for alpha in np.arange(0, 180, 18):
+            im_rot = skimage.transform.rotate(
+                im_pad, alpha, preserve_range=True)
+            im_match = np.max(np.stack(
+                [
+                    match_template(im_rot, rot_templ, pad_input=True, mode = 'wrap'),
+                    match_template(im_rot, rot_templ2, pad_input=True, mode = 'wrap'),
+                ], axis=0), axis=0)
+            im_unrot = skimage.transform.rotate(
+                im_match, -alpha, preserve_range=True)
+            rot_im.append(im_unrot[to_pad:-to_pad, to_pad:-to_pad])
+        all_match = np.stack(rot_im, axis=0)
+        all_match[:, 0:10, :] = 0
+        all_match[:, -10::, :] = 0
+        all_match[:, :, 0:10] = 0
+        all_match[:, :, -10::] = 0
+
+        # keep only regions matching well in the rotational match volume
+        rotation_vol = all_match > 0.4
+        rotation_vol_proj = all_match.max(axis=0)
+
+        # create volume labelled with periodic boundary conditions in z
+        rotation_vol_label = utils.volume_periodic_labelling(rotation_vol)
+
+        # measure region properties of image
+        rotation_vol_props = pd.DataFrame(
+            skimage.measure.regionprops_table(
+                rotation_vol_label,
+                image * np.ones(rotation_vol_label.shape),
+                properties=("label", "area", "mean_intensity"),
+            )
+        )
+
+        # keep only regions with a minimum number of matching voxels
+        new_label_image = utils.select_labels(
+            rotation_vol_label,
+            rotation_vol_props,
+            #{"area": 0, "mean_intensity": 0},
+            {"area": self.min_corr_vol, "mean_intensity": intensity_th},
+        )
+
+        new_label_image_proj = np.max(new_label_image, axis=0)
+        if new_label_image_proj.max() > 0:
+            proj_props = pd.DataFrame(
+                skimage.measure.regionprops_table(
+                    new_label_image_proj,
+                    rotation_vol_proj,
+                    properties=("label", "area", "mean_intensity"),
+                )
+            )
+            remove_small = utils.select_labels(
+                new_label_image_proj,
+                proj_props,
+                {"mean_intensity": 0.5, "area": 25},
+            ) 
+        else:
+            remove_small = new_label_image_proj
+
+        self.actin_segmentation[self.current_file] = remove_small
 
     def bact_measure(self):
         """Measure bacteria properties in all images."""
@@ -338,25 +464,30 @@ class Bact:
             measure_df = pd.concat(dataframes)
             self.bact_measurements[self.current_file] = measure_df
 
-    def run_analysis(self, nucl_channel, bact_channel, cell_channel, filepath):
+    def run_analysis(
+            self, filepath, nucl_channel=None, bact_channel=None,
+            cell_channel=None, actin_channel=None):
         """Run complete segmentation for a specific image.
 
         Parameters
         ----------
+        filepath : str
+            path of image to analyze
         nucl_channel : str
             nuclei channel name
         bact_channel : str
             bacteria channel name
         cell_channel : str
             cell channel name
-        filepath : str
-            path of image to analyze
+        actin_channel : str
+            actin channel name
 
         """
 
         self.nucl_channel = nucl_channel
         self.bact_channel = bact_channel
         self.cell_channel = cell_channel
+        self.actin_channel = actin_channel
 
         self.import_file(filepath)
 
@@ -373,7 +504,8 @@ class Bact:
 
         self.segment_cells(cell_channel)
         self.segment_bacteria(bact_channel)
-        #self.bact_calc_intensity_channels()
+        if actin_channel is not None:
+            self.segment_actintails(actin_channel)
         self.bact_measure()
 
         return True
@@ -399,11 +531,13 @@ class Bact:
                 "bact_channel": self.bact_channel,
                 "nucl_channel": self.nucl_channel,
                 "cell_channel": self.cell_channel,
+                "actin_channel": self.actin_channel,
                 "minsize": self.minsize,
                 "fillholes": self.fillholes,
                 "nuclei_segmentation": self.nuclei_segmentation,
                 "bacteria_segmentation": self.bacteria_segmentation,
                 "cell_segmentation": self.cell_segmentation,
+                "actin_segmentation": self.actin_segmentation,
                 "annotations": self.annotations,
                 "bact_measurements": self.bact_measurements,
                 "channels": self.channels,
@@ -459,6 +593,10 @@ class Bact:
                 skimage.morphology.label(self.cell_segmentation[local_file]),
                 name="cellseg",
             )
+            if self.actin_segmentation[local_file] is not None:
+                viewer.add_labels(
+                    self.actin_segmentation[local_file], name="actinseg")
+
         self.viewer = viewer
         self.create_key_bindings()
 
@@ -504,10 +642,24 @@ class Bact:
                     self.viewer.layers[layer_index].data = self.current_image[:, :, ind]
                     self.viewer.layers[layer_index].name = self.current_file + "_" + c
 
-            self.viewer.layers[-3].data = self.bacteria_segmentation[local_file]
+            bact_layer_ind = [
+                x.name for x in self.viewer.layers].index('bactseg')
+            self.viewer.layers[
+                bact_layer_ind].data = self.bacteria_segmentation[local_file]
 
-            self.viewer.layers[-2].data = self.nuclei_segmentation[local_file]
+            nucl_layer_ind = [
+                x.name for x in self.viewer.layers].index('nucleiseg')
+            self.viewer.layers[
+                nucl_layer_ind].data = self.nuclei_segmentation[local_file]
 
-            self.viewer.layers[-1].data = skimage.morphology.label(
-                self.cell_segmentation[local_file]
-            )
+            cell_layer_index = [
+                x.name for x in self.viewer.layers].index('cellseg')
+            self.viewer.layers[
+                cell_layer_index].data = skimage.morphology.label(
+                self.cell_segmentation[local_file])
+
+            if self.actin_segmentation[local_file] is not None:
+                actin_layer_ind = [
+                    x.name for x in self.viewer.layers].index('actinseg')
+                self.viewer.layers[
+                    actin_layer_ind].data = self.actin_segmentation[local_file]
