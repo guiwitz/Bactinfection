@@ -130,7 +130,7 @@ class Analysis(Bact):
 
         # selection of bin size for histogram
         self.bin_width = ipw.IntSlider(min=10, max=1000, value=50)
-        
+
         # selection of hour to plot in histogram
         self.hour_select = ipw.Select(options=[], value=None)
 
@@ -146,6 +146,12 @@ class Analysis(Bact):
             style={"description_width": "initial"},
         )
         self.sel_channel_time.observe(self.plot_time_curve, names="value")
+        self.sel_channel_time2 = ipw.SelectMultiple(
+            options=[],
+            layout={"width": "200px"},
+            style={"description_width": "initial"},
+        )
+        self.sel_channel_time2.observe(self.plot_time_curve, names="value")
 
         # saving time-curve plot
         self.save_time_curve_plot_button = ipw.Button(
@@ -227,6 +233,7 @@ class Analysis(Bact):
 
         self.sel_channel.options = self.channels
         self.sel_channel_time.options = self.channels
+        self.sel_channel_time2.options = self.channels
         self.create_result()
         self.hour_select.options = self.nuclei_count.hour.unique()
 
@@ -448,6 +455,7 @@ class Analysis(Bact):
 
         self.complete = complete
         self.sel_channel_time.options = complete.channel.unique()
+        self.sel_channel_time2.options = complete.channel.unique()
 
     def data_aggregation(self):
 
@@ -595,32 +603,70 @@ class Analysis(Bact):
             self.data_aggregation_with_threshold()
 
         subset = self.complete[
-                self.complete.channel.isin(self.sel_channel_time.value)
-            ].copy(deep=True)
-        subset = subset.rename(columns={'channel':'Channels'})
+            self.complete.channel.isin(
+                self.sel_channel_time.value)].copy(deep=True)
+        subset2 = self.complete[
+            self.complete.channel.isin(
+                self.sel_channel_time2.value)].copy(deep=True)
 
-        myfig = (
-                ggplot(subset, aes("hour", "normalized", shape="Channels"))
-                + geom_point()
-                + geom_line()
-                + labels.xlab("Time [hours]")
-                + labels.ylab("Average number of objects/nuclei")
-                #+ pn.scale_colour_manual(
-                #    values=colors, labels=list(self.sel_channel_time.value), 
-                #    name=""
-                #)
-                + pn.labs(colour="")
-                + pn.scale_x_continuous(
-                    breaks=np.sort(self.result.hour.unique()),
-                    labels=list(np.sort(self.result.hour.unique()).astype(str))
-                )
-            )
+        symbol_dict = {'Segmented bacteria':'o','Segmented actin tails': 's', 'DAPI': 'o',
+                    'GFP': 's', 'Phal': 'v','Lamp1': 'd'}
+        symbol_fill = {'Segmented bacteria':'full','Segmented actin tails': 'full', 'DAPI': 'none',
+                    'GFP': 'none', 'Phal': 'none','Lamp1': 'none'}
+        othersymbols = ['x','+']
 
-        self.time_curve_fig = myfig
+        symbol_count = 0
 
         self.out_plot2.clear_output()
         with self.out_plot2:
-            display(myfig)
+            fig, ax1 = plt.subplots()
+            color = 'tab:red'
+            ax1.set_xlabel('Time (h)')
+            ax1.set_ylabel('Number of objects', color=color)
+            for c in subset.channel.unique():
+                if c in symbol_dict:
+                    current_col = symbol_dict[c]
+                    current_fill = symbol_fill[c]
+                else:
+                    current_col = othersymbols[symbol_count]
+                    current_fill = 'full'
+                    symbol_count += 1
+                ax1.plot(
+                    subset[subset.channel == c].hour, 
+                    subset[subset.channel == c].normalized, marker=current_col,
+                    fillstyle=current_fill, color=color, label=c)
+            ax1.tick_params(axis='y', labelcolor=color)
+
+            # Shrink current axis by 20%
+            #box = ax1.get_position()
+            #ax1.set_position([box.x0, box.y0, box.width * 0.8, box.height])
+
+            ax2 = ax1.twinx()  # instantiate a second axes that shares the same x-axis
+            color = 'tab:blue'
+            ax2.set_ylabel('Number of objects', color=color)  # we already handled the x-label with ax1
+            for c in subset2.channel.unique():
+                if c in symbol_dict:
+                    current_col = symbol_dict[c]
+                    current_fill = symbol_fill[c]
+                else:
+                    current_col = othersymbols[symbol_count]
+                    current_fill = 'full'
+                    symbol_count += 1
+                ax2.plot(
+                    subset2[subset2.channel == c].hour,
+                    subset2[subset2.channel == c].normalized, 
+                    marker=current_col,
+                    fillstyle=current_fill, color=color, label=c)
+            ax2.tick_params(axis='y', labelcolor=color)
+
+
+
+            # Put a legend to the right of the current axis
+            fig.legend(loc='center left', bbox_to_anchor=(1, 0.5))
+            plt.xticks(ticks=np.unique(self.aggregated.hour))
+            fig.tight_layout()  # otherwise the right y-label is slightly clipped
+            plt.show()
+        self.time_curve_fig = fig
 
     def plot_byhour_callback(self, b=None):
         """Callback function to plot bacteria intensities histograms.
@@ -698,10 +744,10 @@ class Analysis(Bact):
             self.saveto,
             os.path.split(self.folder_name)[-1] + "_timecurve.png",
         )
-        self.time_curve_fig.save(
+        '''self.time_curve_fig.save(
             file_to_save, width=6.4, height=4.8, units="in", verbose=False
-        )
-        #self.time_curve_fig.savefig(file_to_save)
+        )'''
+        self.time_curve_fig.savefig(file_to_save)
 
     def clean_mask(self, local_file):
         """Given global thresholds for all channels and bacteria detection masks,
