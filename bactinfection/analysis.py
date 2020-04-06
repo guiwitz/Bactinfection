@@ -68,6 +68,7 @@ class Analysis(Bact):
         self.result = None
         self.result_ran = None
         self.aggregated = None
+        self.aggregated_th = None
         self.threshold_global = None
         self.GM = None
 
@@ -355,6 +356,8 @@ class Analysis(Bact):
         normal around the main peack to estimate background mu and sigma"""
 
         self.threshold_global = []
+        if self.result is None:
+            self.create_result_with_th()
         for x in range(len(self.channels)):
             out = None
             if self.channels[x] is not None:
@@ -429,7 +432,22 @@ class Analysis(Bact):
         # calculate average number of "bacteria/nuclei"
         averaged = complete.groupby(["channel", "hour"]).mean().reset_index()
 
-        return averaged
+        self.aggregated_th = averaged
+
+        agg_renamed = self.aggregated.rename(columns=
+                           {'number_bacteria':'Segmented bacteria',
+                          'number_actin':'Segmented actin tails'})
+
+        agg_renamed = agg_renamed.melt(
+            id_vars='hour',
+            value_vars=['Segmented bacteria','Segmented actin tails'],
+            var_name='channel',
+            value_name='normalized')
+
+        complete = pd.concat([agg_renamed, self.aggregated_th])
+
+        self.complete = complete
+        self.sel_channel_time.options = complete.channel.unique()
 
     def data_aggregation(self):
 
@@ -542,7 +560,7 @@ class Analysis(Bact):
         with self.out_plot2:
             display(myfig)
 
-    def plot_time_curve(self, b=None):
+    def plot_time_curve_segmented(self, b=None):
         '''Plot time curve'''
 
         self.out_plot2.clear_output()
@@ -570,6 +588,39 @@ class Analysis(Bact):
             fig.tight_layout()  # otherwise the right y-label is slightly clipped
             plt.show()
             self.time_curve_fig = fig
+
+    def plot_time_curve(self, b=None):
+
+        if self.aggregated_th is None:
+            self.data_aggregation_with_threshold()
+
+        subset = self.complete[
+                self.complete.channel.isin(self.sel_channel_time.value)
+            ].copy(deep=True)
+        subset = subset.rename(columns={'channel':'Channels'})
+
+        myfig = (
+                ggplot(subset, aes("hour", "normalized", shape="Channels"))
+                + geom_point()
+                + geom_line()
+                + labels.xlab("Time [hours]")
+                + labels.ylab("Average number of objects/nuclei")
+                #+ pn.scale_colour_manual(
+                #    values=colors, labels=list(self.sel_channel_time.value), 
+                #    name=""
+                #)
+                + pn.labs(colour="")
+                + pn.scale_x_continuous(
+                    breaks=np.sort(self.result.hour.unique()),
+                    labels=list(np.sort(self.result.hour.unique()).astype(str))
+                )
+            )
+
+        self.time_curve_fig = myfig
+
+        self.out_plot2.clear_output()
+        with self.out_plot2:
+            display(myfig)
 
     def plot_byhour_callback(self, b=None):
         """Callback function to plot bacteria intensities histograms.
@@ -647,10 +698,10 @@ class Analysis(Bact):
             self.saveto,
             os.path.split(self.folder_name)[-1] + "_timecurve.png",
         )
-        '''self.time_curve_fig.save(
+        self.time_curve_fig.save(
             file_to_save, width=6.4, height=4.8, units="in", verbose=False
-        )'''
-        self.time_curve_fig.savefig(file_to_save)
+        )
+        #self.time_curve_fig.savefig(file_to_save)
 
     def clean_mask(self, local_file):
         """Given global thresholds for all channels and bacteria detection masks,
