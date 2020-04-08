@@ -89,7 +89,8 @@ class Analysis(Bact):
             layout={"width": "200px"},
             style={"description_width": "initial"},
         )
-        self.default_path_from_browser_button.on_click(self.change_default_from_browser)
+        self.default_path_from_browser_button.on_click(
+            self.change_default_from_browser)
 
         # create browser
         self.folders = Folders()
@@ -116,7 +117,7 @@ class Analysis(Bact):
         )
         self.show_analyzed_button.on_click(self.show_interactive_masks)
 
-        ###### Histogram visualization ##################################
+        # Histogram visualization ##################################
         # plotting hisrogram by channel and hour
         self.button_plotbyhour = ipw.Button(description="Plot by hour")
         self.button_plotbyhour.on_click(self.plot_byhour_callback)
@@ -134,7 +135,7 @@ class Analysis(Bact):
         # selection of hour to plot in histogram
         self.hour_select = ipw.Select(options=[], value=None)
 
-        ###### Time-curve visualization ##################################
+        # Time-curve visualization ##################################
         # plot time curve
         self.plot_time_curve_button = ipw.Button(description="Plot time-curve")
         self.plot_time_curve_button.on_click(self.plot_time_curve)
@@ -173,13 +174,6 @@ class Analysis(Bact):
         else:
             with open("settings.txt", "w") as f:
                 f.write(os.getcwd())
-
-        # load segmentation data
-        # self.load_analysis_button = ipw.Button(description="Load segmentation")
-        # self.load_analysis_button.on_click(self.load_analysis)
-
-        # self.save_analysis_button = ipw.Button(description="Save analysis")
-        # self.save_analysis_button.on_click(self.save_analysis)
 
     def change_default(self, b):
         """Update default path using manual text input"""
@@ -260,7 +254,7 @@ class Analysis(Bact):
             measurements = self.parse_hour_replicates(measurements)
 
             self.result = measurements
-        
+
         # # count nuclei
         # nuclei_count = self.count_nuclei()
         # self.nuclei_count = nuclei_count
@@ -274,7 +268,7 @@ class Analysis(Bact):
             object_dict=self.nuclei_segmentation, name='number_nuclei')
         self.actin_count = self.count_objects(
             object_dict=self.actin_segmentation, name='number_actin')
-        
+
         self.data_aggregation()
 
     def count_nuclei(self):
@@ -284,7 +278,8 @@ class Analysis(Bact):
             if self.nuclei_segmentation[x] is not None:
                 num_nucl = None
                 if self.nuclei_segmentation[x].max() > 0:
-                    num_nucl = np.sum(np.unique(self.nuclei_segmentation[x]) > 0)
+                    num_nucl = np.sum(
+                        np.unique(self.nuclei_segmentation[x]) > 0)
                 dict_list.append({"filename": x, "number_nuclei": num_nucl})
         nuclei_count = pd.DataFrame(dict_list)
 
@@ -340,7 +335,8 @@ class Analysis(Bact):
                 if self.channels[x] is not None:
                     int_values = self.current_image[:, :, x][cellmask]
                     out, _ = utils.fit_gaussian_hist(
-                        int_values, plotting=False, maxbin=int_values.max(), binwidth=10
+                        int_values, plotting=False,
+                        maxbin=int_values.max(), binwidth=10
                     )
                     random_intensities = {
                         "filename": self.current_file,
@@ -374,8 +370,13 @@ class Analysis(Bact):
                     ].pixvalues.values
                 )
                 data = np.log(data)
-                ydata, xdata = np.histogram(data, bins=np.arange(0, data.max(), 0.05))
-                xdata = [0.5 * (xdata[x] + xdata[x + 1]) for x in range(len(xdata) - 1)]
+                ydata, xdata = np.histogram(
+                    data, bins=np.arange(0, data.max(), 0.05)
+                )
+                xdata = [
+                    0.5 * (xdata[x] + xdata[x + 1])
+                    for x in range(len(xdata) - 1)
+                ]
                 # find first point lower than half max after peak
                 first_low = (
                     np.argwhere(
@@ -404,11 +405,9 @@ class Analysis(Bact):
         if self.threshold_global is None:
             self.global_threshold()
         # merge bacteria analysis and background analysis
-        # merged = pd.merge(self.result, self.result_ran[['filename','mean_intensity','std_intensity','channel']],on = ['filename','channel'])
         merged = pd.merge(self.result, self.threshold_global, on="channel")
 
         # select cases where intensity is larger than background
-        # merged['select'] = merged.apply(lambda row: row['mean_intensity_x']>row['mean_intensity_y']+10*row['std_intensity'],axis = 1)
         merged["select"] = merged.apply(
             lambda row: row["mean_intensity"] > row["back_value"], axis=1
         )
@@ -441,13 +440,15 @@ class Analysis(Bact):
 
         self.aggregated_th = averaged
 
-        agg_renamed = self.aggregated.rename(columns=
-                           {'number_bacteria':'Segmented bacteria',
-                          'number_actin':'Segmented actin tails'})
+        agg_renamed = self.aggregated.rename(
+            columns={
+                'number_bacteria': 'Segmented bacteria',
+                'number_actin': 'Segmented actin tails'}
+        )
 
         agg_renamed = agg_renamed.melt(
             id_vars='hour',
-            value_vars=['Segmented bacteria','Segmented actin tails'],
+            value_vars=['Segmented bacteria', 'Segmented actin tails'],
             var_name='channel',
             value_name='normalized')
 
@@ -523,12 +524,13 @@ class Analysis(Bact):
                 + labels.xlab("Time [hours]")
                 + labels.ylab("Average number of bacteria/nuclei")
                 + pn.scale_colour_manual(
-                    values=colors, labels=list(self.sel_channel_time.value), name=""
+                    values=colors, labels=list(self.sel_channel_time.value),
+                    name=""
                 )
                 + pn.labs(colour="")
                 + pn.scale_x_continuous(
                     breaks=np.sort(self.result.hour.unique()),
-                    labels=list(np.sort(self.result.hour.unique()).astype(str)),
+                    labels=list(np.sort(self.result.hour.unique()).astype(str))
                 )
             )
 
@@ -552,7 +554,7 @@ class Analysis(Bact):
                 + labels.xlab("Time [hours]")
                 + labels.ylab("Average number of objects/nuclei")
                 + pn.scale_colour_manual(
-                    values=colors, labels=list(self.sel_channel_time.value), 
+                    values=colors, labels=list(self.sel_channel_time.value),
                     name=""
                 )
                 + pn.labs(colour="")
@@ -609,20 +611,25 @@ class Analysis(Bact):
             self.complete.channel.isin(
                 self.sel_channel_time2.value)].copy(deep=True)
 
-        symbol_dict = {'Segmented bacteria':'o','Segmented actin tails': 's', 'DAPI': 'o',
-                    'GFP': 's', 'Phal': 'v','Lamp1': 'd'}
-        symbol_fill = {'Segmented bacteria':'full','Segmented actin tails': 'full', 'DAPI': 'none',
-                    'GFP': 'none', 'Phal': 'none','Lamp1': 'none'}
-        othersymbols = ['x','+']
+        symbol_dict = {
+            'Segmented bacteria': 'o', 'Segmented actin tails': 's',
+            'DAPI': 'o', 'GFP': 's', 'Phal': 'v', 'Lamp1': 'd'}
+        symbol_fill = {
+            'Segmented bacteria': 'full', 'Segmented actin tails': 'full',
+            'DAPI': 'none', 'GFP': 'none', 'Phal': 'none', 'Lamp1': 'none'}
+        othersymbols = ['x', '+']
 
         symbol_count = 0
 
         self.out_plot2.clear_output()
         with self.out_plot2:
             fig, ax1 = plt.subplots()
-            color = 'tab:red'
-            ax1.set_xlabel('Time (h)')
-            ax1.set_ylabel('Number of objects', color=color)
+            if len(subset2.channel.unique()) > 0:
+                color = 'tab:red'
+            else:
+                color = 'k'
+            ax1.set_xlabel('Time (h)', fontdict=font)
+            ax1.set_ylabel('Number of objects', color=color, fontdict=font)
             for c in subset.channel.unique():
                 if c in symbol_dict:
                     current_col = symbol_dict[c]
@@ -632,45 +639,44 @@ class Analysis(Bact):
                     current_fill = 'full'
                     symbol_count += 1
                 ax1.plot(
-                    subset[subset.channel == c].hour, 
+                    subset[subset.channel == c].hour,
                     subset[subset.channel == c].normalized, marker=current_col,
                     fillstyle=current_fill, color=color, label=c)
             ax1.tick_params(axis='y', labelcolor=color)
 
             # Shrink current axis by 20%
-            #box = ax1.get_position()
-            #ax1.set_position([box.x0, box.y0, box.width * 0.8, box.height])
+            # box = ax1.get_position()
+            # ax1.set_position([box.x0, box.y0, box.width * 0.8, box.height])
 
-            ax2 = ax1.twinx()  # instantiate a second axes that shares the same x-axis
-            color = 'tab:blue'
-            ax2.set_ylabel('Number of objects', color=color)  # we already handled the x-label with ax1
-            for c in subset2.channel.unique():
-                if c in symbol_dict:
-                    current_col = symbol_dict[c]
-                    current_fill = symbol_fill[c]
-                else:
-                    current_col = othersymbols[symbol_count]
-                    current_fill = 'full'
-                    symbol_count += 1
-                ax2.plot(
-                    subset2[subset2.channel == c].hour,
-                    subset2[subset2.channel == c].normalized, 
-                    marker=current_col,
-                    fillstyle=current_fill, color=color, label=c)
-            ax2.tick_params(axis='y', labelcolor=color)
-
-
+            if len(subset2.channel.unique()) > 0:
+                ax2 = ax1.twinx()
+                color = 'tab:blue'
+                ax2.set_ylabel('Number of objects', color=color, fontdict=font)
+                for c in subset2.channel.unique():
+                    if c in symbol_dict:
+                        current_col = symbol_dict[c]
+                        current_fill = symbol_fill[c]
+                    else:
+                        current_col = othersymbols[symbol_count]
+                        current_fill = 'full'
+                        symbol_count += 1
+                    ax2.plot(
+                        subset2[subset2.channel == c].hour,
+                        subset2[subset2.channel == c].normalized,
+                        marker=current_col,
+                        fillstyle=current_fill, color=color, label=c)
+                ax2.tick_params(axis='y', labelcolor=color)
 
             # Put a legend to the right of the current axis
-            fig.legend(loc='center left', bbox_to_anchor=(1, 0.5))
+            fig.legend(loc='center left', bbox_to_anchor=(1, 0.5), fontsize=16)
             plt.xticks(ticks=np.unique(self.aggregated.hour))
-            fig.tight_layout()  # otherwise the right y-label is slightly clipped
+            fig.tight_layout()
             plt.show()
         self.time_curve_fig = fig
 
     def plot_byhour_callback(self, b=None):
         """Callback function to plot bacteria intensities histograms.
-        Called by button_plotbyhour and responds to selection changes 
+        Called by button_plotbyhour and responds to selection changes
         in channels and hour."""
 
         # calculate histograms if necessary
