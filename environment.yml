@@ -27,8 +27,6 @@ dependencies:
     - oiffile
     - napari
     - scikit-learn
-    - git+https://github.com/guiwitz/bactinfection.git@cellpose#egg=bactinfection
+    - git+https://github.com/guiwitz/bactinfection.git@master#egg=bactinfection
     - cellpose
     - plotnine
-#jupyter labextension install @jupyter-widgets/jupyterlab-manager
-#jupyter labextension install @jupyter-voila/jupyterlab-preview
