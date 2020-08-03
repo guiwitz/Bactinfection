@@ -88,6 +88,15 @@ class Gui(Bact):
         self.cellpose_diam_field.observe(
             self.update_cellpose_diam, names="value")
 
+        # widget for cellpose selection of cyto or nucleus model
+        self.cellpose_seg_type = ipw.Select(
+            description="Model type",
+            options=["cyto", "nuclei"],
+            layout={"width": "400px"},
+            style={"description_width": "initial"})
+        self.cellpose_seg_type.observe(
+            self.update_cellpose_seg_type, names="value")
+
         # widget to set specific zoom to use if multiple are available
         self.zoom_field = ipw.IntText(
             description="zoom to analyze",
@@ -139,6 +148,14 @@ class Gui(Bact):
         self.bact_channel_seg.observe(self.update_bact_channel, names="value")
         self.cell_channel_seg.observe(self.update_cell_channel, names="value")
         self.actin_channel_seg.observe(self.update_actin_channel, names="value")
+
+        # context for display of channels
+        self.out_channels = ipw.Output()
+
+        # widget to turn actin detection on/off
+        self.actin_on_off = ipw.Checkbox(description="Analyze actin", value=False)
+        self.actin_on_off.observe(self.update_displayed_channels, names="value")
+        self.update_displayed_channels(change=None)
 
         # widget for loading of segmentation
         self.load_button = ipw.Button(
@@ -287,9 +304,26 @@ class Gui(Bact):
             self.use_ml = False
             with self.out_seg:
                 clear_output()
-                display(self.cellpose_diam_field)
+                display(ipw.VBox([
+                    self.cellpose_diam_field,
+                    self.cellpose_seg_type]))
             if self.model is None:
                 self.import_cellpose_model()
+
+    def update_displayed_channels(self, change):
+        """Update which channel selectors are displayed"""
+
+        list_of_channel_selection = [
+                    ipw.VBox([ipw.HTML('<b>Nuclei segm. channel<b>'), self.nucl_channel_seg]),
+                    ipw.VBox([ipw.HTML('<b>Bacteria segm. channel<b>'), self.bact_channel_seg]),
+                    ipw.VBox([ipw.HTML('<b>Cell segm. channel<b>'), self.cell_channel_seg])
+        ]
+        if self.actin_on_off.value:
+            list_of_channel_selection.append(ipw.VBox([ipw.HTML('<b>Actin segm. channel<b>'), self.actin_channel_seg]))
+
+        with self.out_channels:
+            clear_output()
+            display(ipw.HBox(list_of_channel_selection))
 
     def update_nucl_channel(self, change):
 
@@ -331,6 +365,11 @@ class Gui(Bact):
     def update_cellpose_diam(self, change):
 
         self.cellpose_diam = change["new"]
+
+    def update_cellpose_seg_type(self, change):
+
+        self.cellpose_type = change["new"]
+        self.import_cellpose_model()
 
     def update_fillholes(self, change):
 

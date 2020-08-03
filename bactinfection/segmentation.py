@@ -79,6 +79,7 @@ class Bact:
         self.min_corr_vol = min_corr_vol
         self.use_ml = use_ml
         self.use_cellpose = use_cellpose
+        self.cellpose_type = "nuclei"
         self.model = model
         self.saveto = saveto
 
@@ -129,7 +130,7 @@ class Bact:
         import mxnet
         from cellpose import models
 
-        model = models.Cellpose(device=mxnet.cpu(), model_type="nuclei")
+        model = models.Cellpose(device=mxnet.cpu(), model_type=self.cellpose_type)
         self.model = model
 
     def calculate_median(self, channel):
@@ -504,6 +505,7 @@ class Bact:
 
         self.segment_cells(cell_channel)
         self.segment_bacteria(bact_channel)
+        
         if actin_channel is not None:
             self.segment_actintails(actin_channel)
         self.bact_measure()
@@ -636,7 +638,7 @@ class Bact:
             for ind, c in enumerate(self.channels):
                 if c is not None:
                     layer_index = [
-                        x.name.split(".")[1].split("_")[1] if "." in x.name else x.name
+                        x.name.split(".")[-1].split("_")[1] if "." in x.name else x.name
                         for x in self.viewer.layers
                     ].index(c)
                     self.viewer.layers[layer_index].data = self.current_image[:, :, ind]
