@@ -55,6 +55,9 @@ class Bact:
             use manual annotation and ML for nucleus segmentation
         use_cellpose : bool
             use cellpose for nucleus segmentation
+        cellpose_type : str
+            type of cellpose model to use for nuclei segmentation:
+            either 'nuclei' or 'cyto'
         model : cellpose model
             cellpose model
         saveto : str
@@ -63,12 +66,15 @@ class Bact:
         Attributes
         ----------
 
-        nucl_channel = str
+        nucl_channel: str
             name of nucleus channel
-        bact_channel = str
+        bact_channel:  str
             name of bacteria channel
-        cell_channel = str
+        cell_channel:  str
             name of cell channel
+        masking : str
+            what type of bacteria masking to use:
+            'cells', 'nuclei' or 'both'
 
         """
 
@@ -96,6 +102,7 @@ class Bact:
         self.minsize = 0
         self.fillholes = False
         self.cellpose_diam = 60
+        self.masking = 'cells'
         self.zoom = 0
 
     def initialize_output(self):
@@ -260,19 +267,24 @@ class Bact:
         rot_templ[:, 1:-1] = 1
 
         # recover nuclei and cell mask
-        nucl_mask = self.nuclei_segmentation[self.current_file] > 0
-        cell_mask = self.cell_segmentation[self.current_file]
-
-        # remove bright nuclei regions
-        cell_mask = cell_mask & ~nucl_mask
-        cell_mask = cell_mask.astype(bool)
+        if self.masking == 'both':
+            nucl_mask = self.nuclei_segmentation[self.current_file] > 0
+            cell_mask = self.cell_segmentation[self.current_file]
+            final_mask = nucl_mask + cell_mask
+        elif self.masking == 'nuclei':
+            final_mask = self.nuclei_segmentation[self.current_file] > 0
+        elif self.masking == 'cells':
+            nucl_mask = self.nuclei_segmentation[self.current_file] > 0
+            cell_mask = self.cell_segmentation[self.current_file]
+            cell_mask = cell_mask & ~nucl_mask
+            final_mask = cell_mask.astype(bool)
 
         # calculate median filter image
         self.calculate_median(channel)
         image = self.current_image_med
 
         # calculate an intensity threshold by fitting a gaussian on background
-        out, _ = utils.fit_gaussian_hist(image[cell_mask], plotting=False)
+        out, _ = utils.fit_gaussian_hist(image[final_mask], plotting=False)
         intensity_th = out[0][1] + n_std * np.abs(out[0][2])
 
         # rotate image over a series of angles and do template matching
@@ -331,7 +343,7 @@ class Bact:
         # relabel and project. In the projection we assume there are no
         # overlapping regions
         new_label_image_proj = np.max(new_label_image, axis=0)
-        new_label_image_proj = new_label_image_proj * cell_mask
+        new_label_image_proj = new_label_image_proj * final_mask
         if new_label_image_proj.max() > 0:
             remove_small = utils.select_labels(
                 new_label_image_proj,

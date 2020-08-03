@@ -78,6 +78,19 @@ class Gui(Bact):
         self.fillholes_checks = ipw.Checkbox(description="Fill holes", value=False)
         self.fillholes_checks.observe(self.update_fillholes, names="value")
 
+        # widget to select nucleus masking on/off
+        self.what_to_keep = ipw.RadioButtons(
+            options=[
+            'Only in nucleus',
+            'Only in cells',
+            'In both nucleus and cells'],
+            value='Only in cells',
+            description='Select bacteria present in:',
+            layout={"width": "500px"},
+            style={"description_width": "initial"})
+        self.what_to_keep.observe(self.update_what_to_keep, names="value")
+
+
         # widget to set the diameter used by cellpose for nuclei
         self.cellpose_diam_field = ipw.IntText(
             description="Average nucleus diameter",
@@ -374,6 +387,15 @@ class Gui(Bact):
     def update_fillholes(self, change):
 
         self.fillholes = change["new"]
+
+    def update_what_to_keep(self, change):
+
+        if change['new'] == 'Only in nucleus':
+            self.masking = 'nuclei'
+        elif change['new'] == 'Only in cells':
+            self.masking = 'cells'
+        elif change['new'] == 'In both nucleus and cells':
+            self.masking = 'both'
 
     def update_saveto(self, change):
 
