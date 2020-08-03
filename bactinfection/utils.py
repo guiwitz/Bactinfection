@@ -7,7 +7,7 @@ Core functions for data import and analysis
 
 import numpy as np
 import pandas as pd
-import re
+import os, re
 import matplotlib.pyplot as plt
 
 from scipy.optimize import leastsq
@@ -20,6 +20,9 @@ import oiffile
 
 import javabridge
 import bioformats as bf
+
+# fix issue with path for javabridge
+os.environ['JAVA_HOME']+='/'
 
 javabridge.start_vm(class_path=bf.JARS)
 
