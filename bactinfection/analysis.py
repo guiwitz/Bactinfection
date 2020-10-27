@@ -109,6 +109,10 @@ class Analysis(Bact):
         self.load_button = ipw.Button(description="Load segmentation")
         self.load_button.on_click(self.load_infos)
 
+        # multiple times and replicates
+        self.time_replicates = ipw.Checkbox(
+            value=False)
+
         # interactive visualization of detected bacteria in all channels
         self.show_analyzed_button = ipw.Button(
             description="Show selected bacteria",
@@ -224,6 +228,11 @@ class Analysis(Bact):
 
         with self.out:
             self.load_segmentation()
+        # check if actin information is present
+        if self.actin_segmentation[list(self.actin_segmentation)[0]] is None:
+            self.actin_present = False
+        else:
+            self.actin_present = True
 
         self.sel_channel.options = self.channels
         self.sel_channel_time.options = self.channels
@@ -266,8 +275,11 @@ class Analysis(Bact):
             object_dict=self.bacteria_segmentation, name='number_bacteria')
         self.nuclei_count = self.count_objects(
             object_dict=self.nuclei_segmentation, name='number_nuclei')
-        self.actin_count = self.count_objects(
-            object_dict=self.actin_segmentation, name='number_actin')
+        if self.actin_present:
+            self.actin_count = self.count_objects(
+                object_dict=self.actin_segmentation, name='number_actin')
+        else:
+            self.actin_count = None
 
         self.data_aggregation()
 
@@ -306,14 +318,18 @@ class Analysis(Bact):
         """Use the filename parameter of dataframe to extract the hour
         and replicate values of the file"""
 
-        dataframe["hour"] = dataframe.filename.apply(
-            lambda x: int(re.findall("\_(\d+)h.+\_", x)[0])
-        )
-        dataframe["replicate"] = dataframe.filename.apply(
-            lambda x: int(re.findall("\_(\d+)\.", x)[0])
-            if len(re.findall("\_(\d+)\.", x)) > 0
-            else 0
-        )
+        if self.time_replicates.value:
+            dataframe["hour"] = dataframe.filename.apply(
+                lambda x: int(re.findall("\_(\d+)h.+\_", x)[0])
+            )
+            dataframe["replicate"] = dataframe.filename.apply(
+                lambda x: int(re.findall("\_(\d+)\.", x)[0])
+                if len(re.findall("\_(\d+)\.", x)) > 0
+                else 0
+            )
+        else:
+            dataframe["hour"] = 0
+            dataframe["replicate"] = 0
         return dataframe
 
     def bact_calc_mean_background(self):
@@ -465,15 +481,17 @@ class Analysis(Bact):
             self.bact_count[["filename", "number_bacteria"]],
             on="filename"
         )
-        complete = pd.merge(
-            complete,
-            self.actin_count[["filename", "number_actin"]],
-            on="filename"
-        )
+        if self.actin_present:
+            complete = pd.merge(
+                complete,
+                self.actin_count[["filename", "number_actin"]],
+                on="filename"
+            )
 
         complete = self.parse_hour_replicates(complete)
         complete['number_bacteria'] = complete['number_bacteria'] / complete['number_nuclei']
-        complete['number_actin'] = complete['number_actin'] / complete['number_nuclei']
+        if self.actin_present:
+            complete['number_actin'] = complete['number_actin'] / complete['number_nuclei']
         self.complete = complete
         self.complete = self.complete.fillna(0)
 
@@ -916,7 +934,7 @@ class Analysis(Bact):
         for ind, c in enumerate(self.channels):
             if c is not None:
                 layer_index = [
-                    x.name.split(".")[1].split("_")[1] if "." in x.name else x.name
+                    x.name.split(".")[-1].split("_")[1] if "." in x.name else x.name
                     for x in self.viewer.layers
                 ].index(c)
                 self.viewer.layers[layer_index].data = self.current_image[:, :, ind]
