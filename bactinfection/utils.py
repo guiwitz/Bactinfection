@@ -18,13 +18,15 @@ import skimage
 import skimage.transform
 import oiffile
 
-import javabridge
-import bioformats as bf
+#import javabridge
+#import bioformats as bf
+
+from oirpy.oirreader import Oirreader
 
 # fix issue with path for javabridge
-os.environ['JAVA_HOME']+='/'
+#os.environ['JAVA_HOME']+='/'
 
-javabridge.start_vm(class_path=bf.JARS)
+#javabridge.start_vm(class_path=bf.JARS)
 
 
 def oif_import(filepath, channels=True):
@@ -74,8 +76,11 @@ def oir_import(filepath):
 
     """
 
-    with bf.ImageReader(filepath) as reader:
-        image = reader.read(series=0, rescale=False)
+    #with bf.ImageReader(filepath) as reader:
+    #    image = reader.read(series=0, rescale=False)
+
+    oirfile = Oirreader(filepath)
+    image = oirfile.get_stack()
     return image
 
 
@@ -144,6 +149,162 @@ def segment_nuclei_cellpose(image, model, diameter):
     mask = masks[0]
 
     return mask
+
+
+def segment_cells(image):
+
+    entropy = skimage.filters.rank.entropy(
+            image, selem=np.ones((10, 10)))
+    cell_mask = entropy > 5.5
+    cell_mask = skimage.morphology.binary_opening(
+        cell_mask, selem=skimage.morphology.disk(10))
+    return cell_mask
+
+
+def segment_bacteria(image, final_mask, n_std, bact_len, bact_width, corr_threshold, min_corr_vol):
+
+    # create template
+    rot_templ = -np.ones((bact_len, bact_width))
+    rot_templ[:, 1:-1] = 1
+
+    # calculate an intensity threshold by fitting a gaussian on background
+    out, _ = fit_gaussian_hist(image[final_mask], plotting=False)
+    intensity_th = out[0][1] + n_std * np.abs(out[0][2])
+
+    # rotate image over a series of angles and do template matching
+    # this has the advantage that the template is always the same and
+    # corresponds to the true mode i.e. bright band with dark borders
+    rot_im = []
+    to_pad = int(0.5 * image.shape[0] * (2 ** 0.5 - 1))
+    im_pad = np.pad(image, to_pad)
+    for alpha in np.arange(0, 180, 18):
+        im_rot = skimage.transform.rotate(
+            im_pad, alpha, preserve_range=True)
+        im_match = match_template(im_rot, rot_templ, pad_input=True)
+        im_unrot = skimage.transform.rotate(
+            im_match, -alpha, preserve_range=True)
+        rot_im.append(im_unrot[to_pad:-to_pad, to_pad:-to_pad])
+    all_match = np.stack(rot_im, axis=0)
+
+    # keep only regions matching well in the rotational match volume
+    rotation_vol = all_match > corr_threshold
+
+    # create negative mask to remove regions clearly between bacteria
+    neg_mask = np.max(-all_match, axis=0)
+    neg_mask = neg_mask < 0.3
+    rotation_vol = rotation_vol * neg_mask
+
+    # create volume labelled with periodic boundary conditions in z
+    rotation_vol_label = volume_periodic_labelling(rotation_vol)
+
+    # measure region properties
+    rotation_vol_props = pd.DataFrame(
+        skimage.measure.regionprops_table(
+            rotation_vol_label,
+            image * np.ones(rotation_vol_label.shape),
+            properties=("label", "area", "mean_intensity"),
+        )
+    )
+
+    # keep only regions with a minimum number of matching voxels
+    new_label_image = select_labels(
+        rotation_vol_label,
+        rotation_vol_props,
+        {"area": min_corr_vol, "mean_intensity": intensity_th},
+    )
+
+    # relabel and project. In the projection we assume there are no
+    # overlapping regions
+    new_label_image_proj = np.max(new_label_image, axis=0)
+    new_label_image_proj = new_label_image_proj * final_mask
+    if new_label_image_proj.max() > 0:
+        remove_small = select_labels(
+            new_label_image_proj,
+            limit_dict={"area": 2})
+    else:
+        remove_small = new_label_image_proj
+
+    return remove_small, all_match, rotation_vol_label
+
+
+def segment_actin(image, cell_mask, bact_len, bact_width, n_std, min_corr_vol):
+
+    # two templates are used: small and large widths
+    rot_templ = -np.ones((bact_len, bact_width))
+    rot_templ[:, 1:-1] = 1
+
+    rot_templ2 = -np.ones((bact_len, bact_width+3))
+    rot_templ2[:, 1:-1] = 1
+
+    # calculate an intensity threshold by fitting a gaussian on background
+    out, _ = fit_gaussian_hist(image[cell_mask], plotting=False)
+    intensity_th = out[0][1] + n_std * np.abs(out[0][2])
+
+    # rotate image over a series of angles and do template matching
+    # this has the advantage that the template is always the same and
+    # corresponds to the true mode i.e. bright band with dark borders
+    rot_im = []
+    to_pad = int(0.5 * image.shape[0] * (2 ** 0.5 - 1))
+    im_pad = np.pad(image, to_pad)
+    for alpha in np.arange(0, 180, 18):
+        im_rot = skimage.transform.rotate(
+            im_pad, alpha, preserve_range=True)
+        im_match = np.max(np.stack(
+            [
+                match_template(im_rot, rot_templ, pad_input=True, mode='wrap'),
+                match_template(im_rot, rot_templ2, pad_input=True, mode='wrap'),
+            ], axis=0), axis=0)
+        im_unrot = skimage.transform.rotate(
+            im_match, -alpha, preserve_range=True)
+        rot_im.append(im_unrot[to_pad:-to_pad, to_pad:-to_pad])
+    all_match = np.stack(rot_im, axis=0)
+    all_match[:, 0:10, :] = 0
+    all_match[:, -10::, :] = 0
+    all_match[:, :, 0:10] = 0
+    all_match[:, :, -10::] = 0
+
+    # keep only regions matching well in the rotational match volume
+    rotation_vol = all_match > 0.4
+    rotation_vol_proj = all_match.max(axis=0)
+
+    # create volume labelled with periodic boundary conditions in z
+    rotation_vol_label = volume_periodic_labelling(rotation_vol)
+
+    # measure region properties of image
+    rotation_vol_props = pd.DataFrame(
+        skimage.measure.regionprops_table(
+            rotation_vol_label,
+            image * np.ones(rotation_vol_label.shape),
+            properties=("label", "area", "mean_intensity"),
+        )
+    )
+
+    # keep only regions with a minimum number of matching voxels
+    new_label_image = select_labels(
+        rotation_vol_label,
+        rotation_vol_props,
+        #{"area": 0, "mean_intensity": 0},
+        {"area": min_corr_vol, "mean_intensity": intensity_th},
+    )
+
+    new_label_image_proj = np.max(new_label_image, axis=0)
+    if new_label_image_proj.max() > 0:
+        proj_props = pd.DataFrame(
+            skimage.measure.regionprops_table(
+                new_label_image_proj,
+                rotation_vol_proj,
+                properties=("label", "area", "mean_intensity"),
+            )
+        )
+        remove_small = select_labels(
+            new_label_image_proj,
+            proj_props,
+            {"mean_intensity": 0.5, "area": 25},
+        )
+    else:
+        remove_small = new_label_image_proj
+
+    return remove_small
 
 
 def create_template(length=7, width=3):
