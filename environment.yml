@@ -1,12 +1,11 @@
-name: bact_cellpose
+name: bact_cellpose1
 channels:
   - conda-forge
 dependencies:
-  - python<=3.7
-  - mkl=2019.3
+  - python>3.4,<3.8
   - numba>=0.43.1
   - scipy
-  - numpy
+  - numpy<=1.16.6
   - matplotlib
   - pandas
   - scikit-image
@@ -16,17 +15,21 @@ dependencies:
   - voila
   - nodejs
   - pip
-  - openjdk=8
+  - pyqt
+  #- openjdk=8
+  - dask-jobqueue
   - pip:
-    - mxnet-mkl
-    - opencv_python
+    - mxnet-mkl==1.5.0
+    - opencv-python-headless
+    - pyqtgraph==0.11.0rc0
     - natsort
     - google-cloud-storage
     - tqdm
-    - python-bioformats
+    #- python-bioformats
     - oiffile
     - napari
     - scikit-learn
     - git+https://github.com/guiwitz/bactinfection.git@master#egg=bactinfection
+    - git+https://github.com/guiwitz/oirpy.git@master#egg=oirpy
     - cellpose
     - plotnine
