@@ -1,4 +1,4 @@
-name: bact_cellpose1
+name: bact_cellpose
 channels:
   - conda-forge
 dependencies:
