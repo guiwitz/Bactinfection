@@ -176,7 +176,7 @@ def segment_bacteria(image, final_mask, n_std, bact_len, bact_width, corr_thresh
     # corresponds to the true mode i.e. bright band with dark borders
     rot_im = []
     to_pad = int(0.5 * image.shape[0] * (2 ** 0.5 - 1))
-    im_pad = np.pad(image, to_pad)
+    im_pad = np.pad(image, to_pad, mode='constant')
     for alpha in np.arange(0, 180, 18):
         im_rot = skimage.transform.rotate(
             im_pad, alpha, preserve_range=True)
@@ -245,7 +245,7 @@ def segment_actin(image, cell_mask, bact_len, bact_width, n_std, min_corr_vol):
     # corresponds to the true mode i.e. bright band with dark borders
     rot_im = []
     to_pad = int(0.5 * image.shape[0] * (2 ** 0.5 - 1))
-    im_pad = np.pad(image, to_pad)
+    im_pad = np.pad(image, to_pad, mode='constant')
     for alpha in np.arange(0, 180, 18):
         im_rot = skimage.transform.rotate(
             im_pad, alpha, preserve_range=True)
