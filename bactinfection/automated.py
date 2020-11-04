@@ -58,7 +58,7 @@ def single_image_analysis(
         min_corr_vol=min_corr_vol,
     )
     save_to = save_folder.joinpath(Path(filepath).stem + "_bact_seg.tif")
-    skimage.io.imsave(save_to, bact_mask.astype(np.uint8), check_contrast=False)
+    skimage.io.imsave(save_to, bact_mask.astype(np.uint16), check_contrast=False)
 
     # detect actin tails
     im_actin = oir_image.get_images(channels.index(actin_channel))
@@ -72,11 +72,11 @@ def single_image_analysis(
         min_corr_vol,
     )
     save_to = save_folder.joinpath(Path(filepath).stem + "_actin_seg.tif")
-    skimage.io.imsave(save_to, actin_mask.astype(np.uint8), check_contrast=False)
+    skimage.io.imsave(save_to, actin_mask.astype(np.uint16), check_contrast=False)
 
     # extract signals
     measurements = extract_signals(stack, bact_mask, channels, Path(filepath))
-    save_to = save_folder.joinpath(Path(filepath).stem + "measure.csv")
+    save_to = save_folder.joinpath(Path(filepath).stem + "_measure.csv")
     measurements.to_csv(save_to, index=False)
 
 
