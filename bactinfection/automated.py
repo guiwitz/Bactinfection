@@ -65,7 +65,7 @@ def single_image_analysis(
     im_actin = skimage.filters.median(im_actin, skimage.morphology.disk(2))
     actin_mask = utils.segment_actin(
         im_actin,
-        np.ones(im_actin.shape, dtype=np.bool),
+        final_mask,
         bact_len,
         bact_width,
         n_std,
@@ -114,3 +114,20 @@ def extract_signals(stack, bact_labels, channels, filepath):
 
         measure_df = pd.concat(dataframes)
         return measure_df
+
+
+def get_seg_image(csvfile, seg_type):
+    """Given a measurement file, load the corresponding images."""
+    
+    image_name = Path(str(csvfile).replace('_measure.csv','_'+seg_type+'.tif'))
+    
+    image = skimage.io.imread(image_name)
+    return image
+
+
+def count_objects(csvfile, seg_type):
+    
+    image = get_seg_image(csvfile, seg_type)
+    numobj = len(np.unique(image))-1
+    
+    return numobj
