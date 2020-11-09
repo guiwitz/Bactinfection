@@ -35,6 +35,12 @@ def single_image_analysis(
             f.write("Loading error")
         return None
 
+    for c in [nucl_channel, cell_channel, bact_channel, actin_channel]:
+        if c not in channels:
+            with open(report_file, "a+") as f:
+                f.write(nucl_channel + "channel not existing")
+            return None
+
     model = None
 
     try:
@@ -51,10 +57,11 @@ def single_image_analysis(
         # detect cells
         im_cell = stack[:, :, channels.index(cell_channel)]
 
-        # cell_mask = utils.segment_cells(im_cell)
-        cell_mask = segment_cell_cellpose(model, im_cell, diameter_cell)
         save_to = save_folder.joinpath(Path(filepath).stem + "_cell_seg.tif")
-        skimage.io.imsave(save_to, cell_mask.astype(np.uint8), check_contrast=False)
+        #cell_mask = segment_cell_cellpose(model, im_cell, diameter_cell)
+        #skimage.io.imsave(save_to, cell_mask.astype(np.uint8), check_contrast=False)
+        cell_mask = skimage.io.imread(save_to)
+
         if np.max(cell_mask) == 0:
             with open(report_file, "a+") as f:
                 f.write("No cell found")
