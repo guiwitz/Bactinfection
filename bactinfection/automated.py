@@ -22,6 +22,8 @@ def single_image_analysis(
     corr_threshold,
     min_corr_vol,
     n_std,
+    nucl_model_type='nuclei',
+    masking='cell_no_nuclei'
 ):
 
     report_file = filepath.joinpath(str(filepath).replace(".oir", "_error.txt"))
@@ -35,7 +37,7 @@ def single_image_analysis(
             f.write("Loading error")
         return None
 
-    for c in [nucl_channel, cell_channel, bact_channel, actin_channel]:
+    for c in [nucl_channel, bact_channel, actin_channel]:
         if c not in channels:
             with open(report_file, "a+") as f:
                 f.write(nucl_channel + "channel not existing")
@@ -46,7 +48,7 @@ def single_image_analysis(
     try:
         # detect nuclei
         im_nucl = stack[:, :, channels.index(nucl_channel)]
-        nucl_mask = segment_nucl_cellpose(model, im_nucl, diameter_nucl)
+        nucl_mask = segment_nucl_cellpose(model, im_nucl, diameter_nucl, model_type=nucl_model_type)
         save_to = save_folder.joinpath(Path(filepath).stem + "_nucl_seg.tif")
         skimage.io.imsave(save_to, nucl_mask, check_contrast=False)
         if np.max(nucl_mask) == 0:
@@ -54,25 +56,38 @@ def single_image_analysis(
                 f.write("No nuclei found")
             return None
 
-        # detect cells
-        im_cell = stack[:, :, channels.index(cell_channel)]
+        if cell_channel is not None:
+            # detect cells
+            #im_cell = stack[:, :, channels.index(cell_channel)]
 
-        save_to = save_folder.joinpath(Path(filepath).stem + "_cell_seg.tif")
-        #cell_mask = segment_cell_cellpose(model, im_cell, diameter_cell)
-        #skimage.io.imsave(save_to, cell_mask.astype(np.uint8), check_contrast=False)
-        cell_mask = skimage.io.imread(save_to)
+            save_to = save_folder.joinpath(Path(filepath).stem + "_cell_seg.tif")
+            #cell_mask = segment_cell_cellpose(model, im_cell, diameter_cell)
+            #skimage.io.imsave(save_to, cell_mask.astype(np.uint8), check_contrast=False)
+            cell_mask = skimage.io.imread(save_to)
 
-        if np.max(cell_mask) == 0:
-            with open(report_file, "a+") as f:
-                f.write("No cell found")
-            return None
+            if np.max(cell_mask) == 0:
+                with open(report_file, "a+") as f:
+                    f.write("No cell found")
+                return None
 
         # detect bacteria
         im_bact = stack[:, :, channels.index(bact_channel)]
 
         im_bact = skimage.filters.median(im_bact, skimage.morphology.disk(2))
         nucl_mask2 = nucl_mask > 0
-        final_mask = cell_mask & ~nucl_mask2
+        # exclude detection in the nuclei (mainly for when detecting
+        # bacteria in the same channel as nuclei
+        if masking == 'cell_no_nuclei':
+            final_mask = cell_mask & ~nucl_mask2
+        elif masking == 'cell':
+            final_mask = cell_mask
+        elif masking == 'nuclei':
+            final_mask = nucl_mask2
+        else:
+            with open(report_file, "a+") as f:
+                f.write("No appropriate masking found")
+            return None
+
         final_mask = final_mask.astype(bool)
         bact_mask, _, _ = utils.segment_bacteria(
             im_bact,
@@ -106,11 +121,11 @@ def single_image_analysis(
             return None
 
 
-def segment_nucl_cellpose(model, image, diameter):
+def segment_nucl_cellpose(model, image, diameter, model_type='nuclei'):
     """Segment image x using Cellpose. If model is None, a model is loaded"""
 
     if model is None:
-        model = models.Cellpose(model_type="nuclei")
+        model = models.Cellpose(model_type=model_type)
     m, flows, styles, diams = model.eval([image], diameter=diameter, channels=[[0, 0]])
     m = m[0]
     m = m.astype(np.uint8)
