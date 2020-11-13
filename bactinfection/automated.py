@@ -121,6 +121,8 @@ def single_image_analysis(
         # extract signals in nuclei and bacteria
         measurements = extract_signals(stack, bact_mask, channels, Path(filepath))
         measurements_nucl = extract_signals(stack, nucl_mask, channels, Path(filepath))
+        if actin_channel is not None:
+            measurements_actin = extract_signals(stack, actin_mask, channels, Path(filepath))
 
         # find to which nucleus each bacteria belongs (relevant only if nuclei not excluded)
         nucl_index = pd.DataFrame(
@@ -140,6 +142,8 @@ def single_image_analysis(
         measurements.to_csv(save_to, index=False)
         save_to = save_folder.joinpath(Path(filepath).stem + "_nucl_measure.csv")
         measurements_nucl.to_csv(save_to, index=False)
+        save_to = save_folder.joinpath(Path(filepath).stem + "_actin_measure.csv")
+        measurements_actin.to_csv(save_to, index=False)
 
     except:
         with open(report_file, "a+") as f:
