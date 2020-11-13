@@ -304,6 +304,8 @@ def segment_actin(image, cell_mask, bact_len, bact_width, n_std, min_corr_vol):
     else:
         remove_small = new_label_image_proj
 
+    remove_small = skimage.morphology.label(remove_small)
+
     return remove_small
 
 
