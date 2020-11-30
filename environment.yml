@@ -19,6 +19,8 @@ dependencies:
   #- openjdk=8
   - dask-jobqueue
   - pip:
+    - papermill
+    - bokeh>=0.13.0
     - mxnet-mkl==1.5.0
     - opencv-python-headless
     - pyqtgraph==0.11.0rc0
