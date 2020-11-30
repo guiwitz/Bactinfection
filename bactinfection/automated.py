@@ -231,14 +231,22 @@ def count_objects(csvfile, seg_type):
     return numobj
 
 
-def plot_number_objects(averaged):
+def plot_number_objects(averaged, agg_type='mean'):
+
+    if agg_type == 'mean':
+        bact_col_name = 'bact_normalized_mean'
+        actin_col_name = 'actin_normalized_mean'
+    elif agg_type == 'median':
+        bact_col_name = 'bact_normalized_median'
+        actin_col_name = 'actin_normalized_median'
+
     fig, ax1 = plt.subplots()
     # color = 'tab:red'
     ax1.set_xlabel("Time (h)")
     ax1.set_ylabel("Number of bacteria")  # , color=color)
     ax1.plot(
         averaged.hour,
-        averaged.bact_normalized,
+        averaged[bact_col_name],
         "-o",
         color="black",
         label="Number of bacteria",
@@ -253,7 +261,7 @@ def plot_number_objects(averaged):
     )  # , color=color)  # we already handled the x-label with ax1
     ax2.plot(
         averaged.hour,
-        averaged.actin_normalized,
+        averaged[actin_col_name],
         "-s",
         color="black",
         label="Number of actin tails",
