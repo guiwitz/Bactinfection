@@ -5,6 +5,7 @@ from oirpy.oirreader import Oirreader
 import skimage.io
 import skimage.morphology
 import skimage.measure
+import skimage.segmentation
 from pathlib import Path
 import numpy as np
 import matplotlib.pyplot as plt
@@ -118,7 +119,7 @@ def single_image_analysis(
                 save_to, actin_mask.astype(np.uint16), check_contrast=False
             )
 
-        # extract signals in nuclei and bacteria
+        """# extract signals in nuclei and bacteria
         measurements = extract_signals(stack, bact_mask, channels, Path(filepath))
         measurements_nucl = extract_signals(stack, nucl_mask, channels, Path(filepath))
         if actin_channel is not None:
@@ -143,7 +144,7 @@ def single_image_analysis(
         save_to = save_folder.joinpath(Path(filepath).stem + "_nucl_measure.csv")
         measurements_nucl.to_csv(save_to, index=False)
         save_to = save_folder.joinpath(Path(filepath).stem + "_actin_measure.csv")
-        measurements_actin.to_csv(save_to, index=False)
+        measurements_actin.to_csv(save_to, index=False)"""
 
     except:
         with open(report_file, "a+") as f:
@@ -183,7 +184,13 @@ def extract_signals(stack, bact_labels, channels, filepath):
                 measurements = skimage.measure.regionprops_table(
                     bact_labels,
                     stack[:, :, x],
-                    properties=("mean_intensity", "label", "area", "eccentricity"),
+                    properties=(
+                        "mean_intensity",
+                        "max_intensity",
+                        "label",
+                        "area",
+                        "eccentricity",
+                    ),
                 )
                 dataframes.append(
                     pd.DataFrame(
@@ -201,6 +208,7 @@ def extract_signals(stack, bact_labels, channels, filepath):
             index=[],
             columns=[
                 "mean_intensity",
+                "max_intensity",
                 "label",
                 "area",
                 "eccentricity",
@@ -210,6 +218,48 @@ def extract_signals(stack, bact_labels, channels, filepath):
         )
 
     return measure_df
+
+
+def signal_analysis(filepath, save_folder, seg_folder, distance=2):
+    """Given an image stored at filepath, extract signal measurement within
+    bacteria as defined by segmentation masks present in seg_folder. Bacteria
+    can be expanded by a factor distance."""
+
+    oir_image = Oirreader(filepath)
+    channels = oir_image.get_meta()["channel_names"]
+    stack = oir_image.get_stack()
+
+    bactpath = seg_folder.joinpath(Path(filepath).stem + "_bact_seg.tif")
+    if bactpath.is_file():
+        bact_mask = skimage.io.imread(bactpath)
+        bact_mask = skimage.segmentation.expand_labels(bact_mask, distance=distance)
+
+        nucl_mask = skimage.io.imread(
+            seg_folder.joinpath(Path(filepath).stem + "_nucl_seg.tif")
+        )
+
+        measurements = extract_signals(stack, bact_mask, channels, Path(filepath))
+        # measurements = measurements.rename({'max_intensity': 'mean_intensity'}, axis=1)
+
+        nucl_index = pd.DataFrame(
+            skimage.measure.regionprops_table(
+                bact_mask,
+                intensity_image=nucl_mask,
+                properties=("label", "max_intensity"),
+            )
+        )
+        nucl_index = nucl_index.rename(columns={"max_intensity": "nucleus_index"})
+        # merge signal and bacteria-nuclei info to be able to exclude data from
+        # some nuclei later
+        measurements = pd.merge(measurements, nucl_index, on="label")
+
+        save_to = save_folder.joinpath(Path(filepath).stem + "_measure.csv")
+        measurements.to_csv(save_to, index=False)
+
+        # measure signal in nuclei
+        measurements_nucl = extract_signals(stack, nucl_mask, channels, Path(filepath))
+        save_to = save_folder.joinpath(Path(filepath).stem + "_nucl_measure.csv")
+        measurements_nucl.to_csv(save_to, index=False)
 
 
 def get_seg_image(csvfile, seg_type):
@@ -231,14 +281,14 @@ def count_objects(csvfile, seg_type):
     return numobj
 
 
-def plot_number_objects(averaged, agg_type='mean'):
+def plot_number_objects(averaged, agg_type="mean"):
 
-    if agg_type == 'mean':
-        bact_col_name = 'bact_normalized_mean'
-        actin_col_name = 'actin_normalized_mean'
-    elif agg_type == 'median':
-        bact_col_name = 'bact_normalized_median'
-        actin_col_name = 'actin_normalized_median'
+    if agg_type == "mean":
+        bact_col_name = "bact_normalized_mean"
+        actin_col_name = "actin_normalized_mean"
+    elif agg_type == "median":
+        bact_col_name = "bact_normalized_median"
+        actin_col_name = "actin_normalized_median"
 
     fig, ax1 = plt.subplots()
     # color = 'tab:red'
