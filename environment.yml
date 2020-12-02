@@ -19,6 +19,7 @@ dependencies:
   #- openjdk=8
   - dask-jobqueue
   - pip:
+    - xlrd
     - papermill
     - bokeh>=0.13.0
     - mxnet-mkl==1.5.0
