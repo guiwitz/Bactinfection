@@ -1,4 +1,7 @@
-from .segmentation import Bact
-from .annotateml import Annotate
-from .gui import Gui
-from .analysis import Analysis
+from pkg_resources import get_distribution, DistributionNotFound
+
+try:
+    __version__ = get_distribution("bactinfection").version
+except DistributionNotFound:
+    # package is not installed
+    pass
