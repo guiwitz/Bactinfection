@@ -1,15 +1,20 @@
+import warnings
 import numpy as np
 import pandas as pd
 import skimage.transform
 import skimage.filters
 import skimage.morphology
 from skimage.segmentation import relabel_sequential
+from smo import SMO
 
 from cellpose import models
 from .utils import (fit_gaussian_hist, volume_periodic_labelling,
 select_labels, rotation_templat_matching)
 
-def segment_nucl_cellpose(model, image, diameter, model_type="nuclei"):
+def segment_nucl_cellpose(
+    model, image, diameter,
+    model_type="nuclei", resample=False):
+    
     """
     Segment image x using Cellpose.
     
@@ -22,6 +27,8 @@ def segment_nucl_cellpose(model, image, diameter, model_type="nuclei"):
         estimated diamter of cells/nuclei
     model_type: str
         'cells' or 'nuclei'
+    resample: bool
+        use resampling dynamics in cellpose (slower)
 
     Returns
     -------
@@ -32,7 +39,7 @@ def segment_nucl_cellpose(model, image, diameter, model_type="nuclei"):
 
     if model is None:
         model = models.Cellpose(model_type=model_type)
-    m, flows, styles, diams = model.eval([image], diameter=diameter, channels=[[0, 0]])
+    m, flows, styles, diams = model.eval([image], diameter=diameter, channels=[[0, 0]], resample=resample)
     m = m[0]
     m = m.astype(np.uint8)
     return m
@@ -66,8 +73,8 @@ def segment_cell_cellpose(model, image, diameter, model_type="cyto"):
     return m
 
 def segment_bacteria(
-    image, final_mask, n_std, bact_len, bact_width,
-    corr_threshold, min_corr_vol):
+    image, background_estim='smo', final_mask=None, n_std=1, bact_len=5, bact_width=5,
+    corr_threshold=0.5, min_corr_vol=5):
     """
     Segment bacteria based on a template
     
@@ -75,8 +82,15 @@ def segment_bacteria(
     ---------
     image: 2d array
         image to segment
+    background_estim: str
+        method to estimate background
+        'mask': use intensity within final_mask for fit
+        'smo': use the smo package to estimate background
+        'none': no background estimation
     final_mask: 2d array
-        mask to select zones to segment
+        mask to select zones where to keep segmented bacteria
+        also used for background estimation if 'mask' is used
+        in background_estim
     n_std: float
         number of standard deviation to set intensity
         threshold compared to background
@@ -108,8 +122,18 @@ def segment_bacteria(
     rot_templ[:, 1:-1] = 1
 
     # calculate an intensity threshold by fitting a gaussian on background
-    out, _ = fit_gaussian_hist(image[final_mask], plotting=False)
-    intensity_th = out[0][1] + n_std * np.abs(out[0][2])
+    if background_estim == 'mask':
+        if final_mask is None:
+            warnings.warn('final_mask is None, using whole image for background estimation')
+            temp_mask = np.ones_like(image)
+        out, _ = fit_gaussian_hist(image[temp_mask], plotting=False)
+        intensity_th = out[0][1] + n_std * np.abs(out[0][2])
+    elif background_estim == 'smo':
+        smo = SMO(sigma=0, size=7, shape=(1024, 1024))
+        bg_rv = smo.bg_rv(image)
+        intensity_th = bg_rv.ppf(0.99)
+    elif background_estim == 'none':
+        intensity_th = 0
 
     # rotate image over a series of angles and do template matching
     all_match = rotation_templat_matching(image, rot_templ)
@@ -143,6 +167,10 @@ def segment_bacteria(
 
     # relabel and project. In the projection we assume there are no
     # overlapping regions
+    # if no mask provided, use all pixels
+    if final_mask is None:
+        final_mask = np.ones_like(image)
+
     new_label_image_proj = np.max(new_label_image, axis=0)
     new_label_image_proj = new_label_image_proj * final_mask
     if new_label_image_proj.max() > 0:
