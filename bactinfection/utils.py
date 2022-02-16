@@ -13,7 +13,7 @@ def rotation_templat_matching(image, rot_templ):
     # corresponds to the true mode i.e. bright band with dark borders
     rot_im = []
     to_pad = int(0.5 * image.shape[0] * (2 ** 0.5 - 1))
-    im_pad = np.pad(image, to_pad, mode='constant')
+    im_pad = np.pad(image, to_pad, mode='reflect')
     for alpha in np.arange(0, 180, 18):
         im_rot = skimage.transform.rotate(
             im_pad, alpha, preserve_range=True)
